@@ -34,6 +34,8 @@ iniciarDB()
     });
   })
   .catch(err => {
-    console.error('[FATAL] Erro ao inicializar banco:', err.message);
+    console.error('[FATAL] Erro ao inicializar banco:', err.message || err);
+    console.error('[FATAL] Verifique se o MySQL está rodando e as configs do .env estão corretas.');
+    console.error('[FATAL] Detalhes:', err);
     process.exit(1);
   });
