@@ -1,5 +1,14 @@
-pdfplumber>=0.10.0
-pymupdf>=1.23.0
-Pillow>=10.0.0
-pytesseract>=0.3.10
-openpyxl>=3.1.2
+# Extração de PDF (3 motores em cascata)
+pdfplumber>=0.10.0       # motor 1: extração estruturada
+pymupdf>=1.23.0          # motor 2: extração bruta + OCR render
+pypdfium2>=5.9.0         # dependência do pdfplumber
+
+# OCR (motor 3 — fallback para PDFs escaneados)
+Pillow>=10.0.0           # renderização de páginas para imagem
+pytesseract>=0.3.10      # wrapper do Tesseract OCR
+
+# Excel
+openpyxl>=3.1.2          # leitura de planilhas .xlsx
+
+# Utilitários
+charset-normalizer>=2.0.0  # detecção de encoding

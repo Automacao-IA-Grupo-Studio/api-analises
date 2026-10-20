@@ -295,10 +295,13 @@ def _ocr_pdf(caminho: str) -> str:
     if not _garantir_tesseract():
         return ""
     try:
-        import fitz
+        import pymupdf as fitz  # nova API (evita warning no stdout)
     except ImportError:
-        _log("      [ocr] pymupdf não instalado")
-        return ""
+        try:
+            import fitz  # fallback versão antiga
+        except ImportError:
+            _log("      [ocr] pymupdf não instalado")
+            return ""
     try:
         from PIL import Image
     except ImportError:
@@ -354,7 +357,10 @@ def extrair_texto(caminho: str) -> str:
                 return texto
 
             try:
-                import fitz
+                try:
+                    import pymupdf as fitz  # nova API (evita warning no stdout)
+                except ImportError:
+                    import fitz
                 doc = fitz.open(caminho)
                 texto2 = "\n".join(p.get_text() for p in doc)
                 doc.close()

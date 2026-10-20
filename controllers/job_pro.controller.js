@@ -100,14 +100,18 @@ exports.analisarJob = async (req, res) => {
     }
 
     // Parse do JSON retornado pelo script
+    // Ignora qualquer linha de warning antes do JSON (ex: warnings do pymupdf)
     let analise;
     try {
-      analise = JSON.parse(stdout);
+      const jsonStart = stdout.indexOf('{');
+      if (jsonStart === -1) throw new Error('Nenhum JSON encontrado no stdout');
+      const jsonStr = stdout.slice(jsonStart);
+      analise = JSON.parse(jsonStr);
     } catch (e) {
-      console.error('[analisar] JSON inválido:', stdout.slice(0, 300));
+      console.error('[analisar] JSON inválido:', stdout.slice(0, 500));
       return res.status(500).json({
         error: 'Resposta do analisador não é JSON válido',
-        raw: stdout.slice(0, 300),
+        raw: stdout.slice(0, 500),
       });
     }
 
