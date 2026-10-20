@@ -909,7 +909,9 @@ document.getElementById('analyzeForm').addEventListener('submit', async e => {
     const data = await r.json();
 
     if (!r.ok) {
-      throw new Error(data.error || `HTTP ${r.status}`);
+      const err = new Error(data.error || `HTTP ${r.status}`);
+      err._raw = JSON.stringify(data);
+      throw err;
     }
 
     const job = data.job || {};
@@ -924,9 +926,20 @@ document.getElementById('analyzeForm').addEventListener('submit', async e => {
 
   } catch (err) {
     alertBox.className = 'alert alert-err';
-    alertBox.textContent = `✕  ${err.message}`;
     alertBox.hidden = false;
     msg.textContent = '';
+    // Tenta pegar detalhes do stderr do Python da resposta da API
+    try {
+      const errData = JSON.parse(err._raw || '{}');
+      const detalhe = errData.detalhes || errData.raw || '';
+      if (detalhe) {
+        alertBox.innerHTML = `<div><strong>✕ ${err.message}</strong></div><pre style="margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:rgba(0,0,0,.08);padding:8px;border-radius:4px;max-height:200px;overflow:auto">${detalhe.replace(/</g,'&lt;')}</pre>`;
+      } else {
+        alertBox.textContent = `✕  ${err.message}`;
+      }
+    } catch {
+      alertBox.textContent = `✕  ${err.message}`;
+    }
   } finally {
     btn.disabled = false;
     btnText.textContent = 'Analisar Job';
