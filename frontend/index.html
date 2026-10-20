@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Análises — Studio Fiscal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    /* ── Tokens ────────────────────────────────────────────────────────────── */
+    :root {
+      --navy:       #0d1b2e;
+      --navy-2:     #1e3a5f;
+      --navy-3:     #162d4a;
+      --blue:       #1a56db;
+      --blue-mid:   #2563eb;
+      --blue-lt:    #dbeafe;
+      --blue-xlt:   #eff6ff;
+      --green:      #057a55;
+      --green-bg:   #ecfdf5;
+      --green-bd:   #6ee7b7;
+      --red:        #c81e1e;
+      --red-bg:     #fef2f2;
+      --red-bd:     #fca5a5;
+      --amber:      #b45309;
+      --amber-bg:   #fffbeb;
+      --amber-bd:   #fcd34d;
+      --bg:         #f3f4f6;
+      --bg-card:    #ffffff;
+      --fg:         #111827;
+      --fg-2:       #374151;
+      --fg-3:       #6b7280;
+      --border:     #e5e7eb;
+      --border-2:   #d1d5db;
+      --mono:       'JetBrains Mono', 'Courier New', monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg:       #0f172a;
+        --bg-card:  #1e293b;
+        --fg:       #f1f5f9;
+        --fg-2:     #cbd5e1;
+        --fg-3:     #64748b;
+        --border:   #334155;
+        --border-2: #475569;
+        --blue-xlt: #1e3a5f;
+        --blue-lt:  #1e3a5f;
+        --green-bg: #052e16;
+        --green-bd: #166534;
+        --red-bg:   #2d0a0a;
+        --red-bd:   #991b1b;
+        --amber-bg: #292108;
+        --amber-bd: #92400e;
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg:       #0f172a;
+      --bg-card:  #1e293b;
+      --fg:       #f1f5f9;
+      --fg-2:     #cbd5e1;
+      --fg-3:     #64748b;
+      --border:   #334155;
+      --border-2: #475569;
+      --blue-xlt: #1e3a5f;
+      --blue-lt:  #1e3a5f;
+      --green-bg: #052e16;
+      --green-bd: #166534;
+      --red-bg:   #2d0a0a;
+      --red-bd:   #991b1b;
+      --amber-bg: #292108;
+      --amber-bd: #92400e;
+      color-scheme: dark;
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    html { font-family: 'Inter', system-ui, sans-serif; font-size: 14px; color: var(--fg); background: var(--bg) }
+    body { min-height: 100vh }
+    button { font-family: inherit; cursor: pointer }
+    input  { font-family: inherit }
+
+    /* ── Topbar ────────────────────────────────────────────────────────────── */
+    .topbar {
+      background: var(--navy);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: -.01em;
+    }
+    .topbar-brand .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1) }
+      50%       { opacity: .5; transform: scale(.85) }
+    }
+    .topbar-sub {
+      font-size: 11px;
+      color: #60a5fa;
+      font-weight: 400;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .topbar-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    .status-dot.offline { background: #ef4444 }
+
+    /* ── Layout ────────────────────────────────────────────────────────────── */
+    .layout {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 24px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; padding: 16px }
+    }
+
+    /* ── Card ──────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-header-icon {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      background: var(--blue-xlt);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg);
+    }
+    .card-subtitle {
+      font-size: 11px;
+      color: var(--fg-3);
+      margin-top: 2px;
+    }
+    .card-body { padding: 18px }
+
+    /* ── Form ──────────────────────────────────────────────────────────────── */
+    .field + .field { margin-top: 12px }
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-3);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 5px;
+    }
+    .field input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border-2);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 13px;
+      transition: border-color .15s, box-shadow .15s;
+      font-family: var(--mono);
+    }
+    .field input:focus {
+      outline: none;
+      border-color: var(--blue-mid);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-mid) 15%, transparent);
+    }
+    .field .hint {
+      font-size: 11px;
+      color: var(--fg-3);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    /* ── Buttons ───────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--blue-mid);
+      color: #fff;
+      width: 100%;
+      margin-top: 16px;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--blue) }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed }
+    .btn-sm {
+      padding: 5px 11px;
+      font-size: 11px;
+      border-radius: 6px;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--fg-3);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--bg); color: var(--fg) }
+
+    /* ── Progress bar ──────────────────────────────────────────────────────── */
+    .progress-wrap {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 14px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: var(--blue-mid);
+      border-radius: 2px;
+      transition: width .3s ease;
+    }
+    .progress-bar.indeterminate {
+      width: 40% !important;
+      animation: slide 1.4s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0%   { transform: translateX(-100%) }
+      100% { transform: translateX(350%) }
+    }
+    #analyzeMsg {
+      font-size: 12px;
+      color: var(--fg-3);
+      margin-top: 8px;
+      min-height: 18px;
+    }
+
+    /* ── Alert box ─────────────────────────────────────────────────────────── */
+    .alert {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .alert-err  { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-bd) }
+    .alert-ok   { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd) }
+
+    /* ── Stats row ─────────────────────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+    .stat-cell {
+      background: var(--bg-card);
+      padding: 14px 16px;
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--fg-3);
+      margin-top: 3px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    /* ── Toolbar ───────────────────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .toolbar-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-right: auto;
+    }
+    #searchInput {
+      padding: 6px 10px;
+      border: 1px solid var(--border-2);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 12px;
+      width: 180px;
+    }
+    #searchInput:focus { outline: none; border-color: var(--blue-mid) }
+
+    /* ── Table ─────────────────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    thead th {
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-3);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    tbody tr:hover { background: var(--bg) }
+    tbody td {
+      padding: 10px 12px;
+      color: var(--fg-2);
+      vertical-align: middle;
+    }
+    .td-job {
+      font-weight: 600;
+      color: var(--fg);
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .td-path {
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-3);
+    }
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--fg-3);
+    }
+    .empty-state svg { margin-bottom: 12px; opacity: .4 }
+    .empty-state p { font-size: 13px }
+
+    /* ── Badges ────────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-ok    { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd) }
+    .badge-err   { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-bd) }
+    .badge-warn  { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd) }
+
+    /* ── Alerts summary ────────────────────────────────────────────────────── */
+    .alerts-chips {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .alert-chip {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      background: var(--red-bg);
+      color: var(--red);
+    }
+
+    /* ── Modal ─────────────────────────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 200;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px;
+      overflow-y: auto;
+    }
+    .modal-overlay[hidden] { display: none }
+    .modal {
+      background: var(--bg-card);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 760px;
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,.35);
+      animation: modal-in .18s ease;
+    }
+    @keyframes modal-in {
+      from { transform: translateY(-16px); opacity: 0 }
+      to   { transform: translateY(0);     opacity: 1 }
+    }
+    .modal-head {
+      background: var(--navy);
+      padding: 16px 20px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .modal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      word-break: break-all;
+    }
+    .modal-meta {
+      font-size: 11px;
+      color: #93c5fd;
+      margin-top: 3px;
+    }
+    .modal-close {
+      background: rgba(255,255,255,.1);
+      border: none;
+      color: #fff;
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      font-size: 16px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .modal-close:hover { background: rgba(255,255,255,.2) }
+    .modal-body { padding: 20px }
+
+    /* ── Checklist ─────────────────────────────────────────────────────────── */
+    .checklist {
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .checklist-header {
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .checklist-header.ok  { background: var(--green-bg); color: var(--green) }
+    .checklist-header.err { background: var(--red-bg);   color: var(--red) }
+    .checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .checklist-item.active { background: var(--red-bg); color: var(--red); font-weight: 600 }
+    .checklist-item.clear  { color: var(--fg-3) }
+
+    /* ── Results grid ──────────────────────────────────────────────────────── */
+    .cat-section + .cat-section { margin-top: 18px }
+    .cat-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--blue-mid);
+      margin-bottom: 8px;
+      padding-left: 4px;
+      border-left: 3px solid var(--blue-mid);
+      padding-left: 8px;
+    }
+    .result-row {
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      gap: 8px 10px;
+      align-items: start;
+      padding: 8px 10px;
+      border-radius: 7px;
+      margin-bottom: 2px;
+    }
+    .result-row.ok    { background: transparent }
+    .result-row.miss  { background: var(--red-bg) }
+    .result-row.warn  { background: var(--amber-bg) }
+    .result-row.alert { background: var(--red-bg) }
+    .result-icon { font-size: 13px; margin-top: 1px; text-align: center }
+    .result-field { font-size: 12px; font-weight: 600; color: var(--fg) }
+    .result-val {
+      font-size: 12px;
+      color: var(--fg-2);
+      margin-top: 2px;
+      word-break: break-word;
+      font-family: var(--mono);
+    }
+    .result-badge { align-self: center }
+
+    /* ── Raw JSON viewer ───────────────────────────────────────────────────── */
+    .raw-toggle {
+      font-size: 11px;
+      color: var(--fg-3);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 16px;
+      user-select: none;
+    }
+    .raw-toggle:hover { color: var(--fg) }
+    .raw-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-2);
+      max-height: 300px;
+      overflow: auto;
+      margin-top: 8px;
+      white-space: pre;
+    }
+
+    /* ── Skeleton loader ───────────────────────────────────────────────────── */
+    .skel {
+      background: linear-gradient(90deg, var(--border) 25%, var(--bg) 50%, var(--border) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 4px;
+      height: 14px;
+    }
+    @keyframes shimmer { to { background-position: -200% 0 } }
+
+    /* ── Scrollbar ─────────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px }
+    ::-webkit-scrollbar-track { background: transparent }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px }
+  </style>
+</head>
+<body>
+
+<!-- ── Topbar ────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <span class="dot"></span>
+    Studio Fiscal
+    <span class="topbar-sub">/ API Análises</span>
+  </div>
+  <div class="topbar-status" id="topbarStatus">
+    <span class="status-dot offline" id="statusDot"></span>
+    <span id="statusText">verificando…</span>
+  </div>
+</header>
+
+<!-- ── Layout ────────────────────────────────────────────────────────────── -->
+<main class="layout">
+
+  <!-- Coluna esquerda: formulário -->
+  <aside>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon">🔍</div>
+        <div>
+          <div class="card-title">Analisar Job</div>
+          <div class="card-subtitle">Dispara análise de um diretório de cliente</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <form id="analyzeForm">
+          <div class="field">
+            <label>Número / Nome do Job</label>
+            <input type="text" id="numJobInput" placeholder="001 - EMPRESA EXEMPLO" required>
+          </div>
+          <div class="field">
+            <label>Caminho do Diretório</label>
+            <input type="text" id="pastaInput"
+              placeholder="\\studiofiscal\Temporarios\001 - EMPRESA" required>
+            <div class="hint">
+              Docker: /mnt/temporarios/001 - EMPRESA<br>
+              Windows: \\studiofiscal\Temporarios\...
+            </div>
+          </div>
+          <div id="analyzeAlert" hidden></div>
+          <button type="submit" class="btn btn-primary" id="analyzeBtn">
+            <span id="analyzeBtnIcon">▶</span>
+            <span id="analyzeBtnText">Analisar Job</span>
+          </button>
+          <div class="progress-wrap" id="progressWrap" hidden>
+            <div class="progress-bar indeterminate" id="progressBar"></div>
+          </div>
+          <div id="analyzeMsg"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Info rápida da API -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-header">
+        <div class="card-header-icon">🔌</div>
+        <div>
+          <div class="card-title">Endpoints</div>
+          <div class="card-subtitle">Rotas disponíveis</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding:12px 16px">
+        <div style="font-family:var(--mono);font-size:11px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="badge badge-ok" style="font-size:10px;border-radius:4px">GET</span>
+            <span style="color:var(--fg-2)">/api/jobs</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="badge badge-ok" style="font-size:10px;border-radius:4px">GET</span>
+            <span style="color:var(--fg-2)">/api/jobs/:id</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="badge badge-warn" style="font-size:10px;border-radius:4px">POST</span>
+            <span style="color:var(--fg-2)">/api/jobs/analisar</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Coluna direita: lista de jobs -->
+  <section>
+    <!-- Stats -->
+    <div class="stats-row" id="statsRow">
+      <div class="stat-cell">
+        <div class="stat-num" id="statTotal">—</div>
+        <div class="stat-label">Jobs Analisados</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num" id="statAlerts" style="color:var(--red)">—</div>
+        <div class="stat-label">Com Alertas</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num" id="statFastpass" style="color:var(--blue-mid)">—</div>
+        <div class="stat-label">Fastpass ≥ 20M</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon">📋</div>
+        <div>
+          <div class="card-title">Jobs Analisados</div>
+          <div class="card-subtitle">Clique em um job para ver os detalhes completos</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="carregarJobs()">↻ Atualizar</button>
+      </div>
+      <div class="card-body" style="padding:12px 16px 8px">
+        <div class="toolbar">
+          <span class="toolbar-title" id="jobsCount">0 jobs</span>
+          <input type="search" id="searchInput" placeholder="Buscar job…"
+            oninput="filtrarJobs(this.value)">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Checklist</th>
+                <th>Contrato</th>
+                <th>Fastpass</th>
+                <th>Situação Fiscal</th>
+                <th>Analisado em</th>
+              </tr>
+            </thead>
+            <tbody id="jobsBody">
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p>Nenhum job analisado ainda.<br>Use o formulário ao lado para iniciar.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ── Modal de detalhes ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalOverlay" hidden onclick="fecharModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="modalTitle">—</div>
+        <div class="modal-meta" id="modalMeta">—</div>
+      </div>
+      <button class="modal-close" onclick="fecharModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <p style="color:var(--fg-3);font-size:13px">Carregando…</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const API = '';  // mesmo origin — ''/api/jobs funciona porque servido pelo Express
+let todosJobs = [];
+
+// ── Ping para verificar se API está online ──────────────────────────────────
+async function checkAPI() {
+  try {
+    const r = await fetch(`${API}/api/jobs`);
+    if (r.ok) {
+      document.getElementById('statusDot').classList.remove('offline');
+      document.getElementById('statusText').textContent = 'API online';
+    } else {
+      throw new Error(r.status);
+    }
+  } catch {
+    document.getElementById('statusDot').classList.add('offline');
+    document.getElementById('statusText').textContent = 'API offline';
+  }
+}
+
+// ── Carregar lista de jobs ──────────────────────────────────────────────────
+async function carregarJobs() {
+  try {
+    const r = await fetch(`${API}/api/jobs`);
+    const data = await r.json();
+    todosJobs = data.jobs || [];
+    renderJobs(todosJobs);
+    atualizarStats(todosJobs);
+  } catch (e) {
+    console.error('Erro ao carregar jobs:', e);
+  }
+}
+
+function renderJobs(jobs) {
+  const tbody = document.getElementById('jobsBody');
+  document.getElementById('jobsCount').textContent = `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`;
+
+  if (!jobs.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+      <p>Nenhum job analisado ainda.</p></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = jobs.map(j => {
+    const alertas = [
+      j.alerta_sem_contrato   ? 'SEM CONTRATO' : null,
+      j.alerta_sem_procuracao ? 'SEM PROC.' : null,
+      j.alerta_baixo_fat      ? 'FAT BAIXO' : null,
+      j.alerta_regularize     ? 'REGULARIZE' : null,
+    ].filter(Boolean);
+
+    const dataAnalisada = j.analisado_em
+      ? new Date(j.analisado_em).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
+      : '—';
+
+    const contBadge = j.contrato_existe
+      ? `<span class="badge badge-ok">✔ Sim</span>`
+      : `<span class="badge badge-err">✕ Não</span>`;
+
+    const fpText = j.fastpass || '';
+    const fpBadge = fpText.toLowerCase().startsWith('sim')
+      ? `<span class="badge badge-ok">✔ Sim</span>`
+      : fpText.toLowerCase().startsWith('não') || fpText.toLowerCase().startsWith('nao')
+      ? `<span class="badge badge-warn">✕ Não</span>`
+      : `<span style="color:var(--fg-3);font-size:11px">—</span>`;
+
+    const sfVal = j.situacao_fiscal || '';
+    const sfBadge = sfVal.includes('NEGATIVA')
+      ? `<span class="badge badge-ok" title="${sfVal}">Negativa</span>`
+      : sfVal.includes('EFEITOS')
+      ? `<span class="badge badge-warn" title="${sfVal}">PEFN</span>`
+      : sfVal.includes('POSITIVA')
+      ? `<span class="badge badge-err" title="${sfVal}">Positiva</span>`
+      : `<span style="color:var(--fg-3);font-size:11px">—</span>`;
+
+    const alertsHtml = alertas.length
+      ? `<div class="alerts-chips">${alertas.map(a => `<span class="alert-chip">${a}</span>`).join('')}</div>`
+      : `<span style="color:var(--green);font-size:11px">✔ Sem alertas</span>`;
+
+    return `<tr onclick="abrirJob(${j.id})">
+      <td>
+        <div class="td-job" title="${j.num_job}">${j.num_job}</div>
+        <div class="td-path" title="${j.pasta_raiz}">${j.pasta_raiz}</div>
+      </td>
+      <td>${alertsHtml}</td>
+      <td>${contBadge}</td>
+      <td>${fpBadge}</td>
+      <td>${sfBadge}</td>
+      <td style="color:var(--fg-3);white-space:nowrap">${dataAnalisada}</td>
+    </tr>`;
+  }).join('');
+}
+
+function atualizarStats(jobs) {
+  document.getElementById('statTotal').textContent = jobs.length;
+  const comAlerta = jobs.filter(j => j.alerta_sem_contrato || j.alerta_sem_procuracao || j.alerta_baixo_fat || j.alerta_regularize).length;
+  const fastpass  = jobs.filter(j => (j.fastpass || '').toLowerCase().startsWith('sim')).length;
+  document.getElementById('statAlerts').textContent = comAlerta;
+  document.getElementById('statFastpass').textContent = fastpass;
+}
+
+function filtrarJobs(q) {
+  if (!q.trim()) { renderJobs(todosJobs); return; }
+  const t = q.toLowerCase();
+  renderJobs(todosJobs.filter(j =>
+    j.num_job.toLowerCase().includes(t) ||
+    (j.pasta_raiz || '').toLowerCase().includes(t) ||
+    (j.situacao_fiscal || '').toLowerCase().includes(t)
+  ));
+}
+
+// ── Formulário de análise ───────────────────────────────────────────────────
+document.getElementById('analyzeForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const num_job    = document.getElementById('numJobInput').value.trim();
+  const pasta_raiz = document.getElementById('pastaInput').value.trim();
+  if (!num_job || !pasta_raiz) return;
+
+  const btn      = document.getElementById('analyzeBtn');
+  const btnText  = document.getElementById('analyzeBtnText');
+  const btnIcon  = document.getElementById('analyzeBtnIcon');
+  const progress = document.getElementById('progressWrap');
+  const msg      = document.getElementById('analyzeMsg');
+  const alertBox = document.getElementById('analyzeAlert');
+
+  btn.disabled = true;
+  btnText.textContent = 'Analisando…';
+  btnIcon.textContent = '⏳';
+  progress.hidden = false;
+  msg.textContent = 'Buscando arquivos e extraindo dados…';
+  alertBox.hidden = true;
+
+  try {
+    const r = await fetch(`${API}/api/jobs/analisar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ num_job, pasta_raiz }),
+    });
+
+    const data = await r.json();
+
+    if (!r.ok) {
+      throw new Error(data.error || `HTTP ${r.status}`);
+    }
+
+    const job = data.job || {};
+    const ok  = (job.raw_resultado?.resumo?.encontrados) ?? '—';
+    const tot = (job.raw_resultado?.resumo?.total)       ?? '—';
+
+    alertBox.className = 'alert alert-ok';
+    alertBox.textContent = `✔  Análise concluída — ${ok}/${tot} campos encontrados`;
+    alertBox.hidden = false;
+    msg.textContent = '';
+    carregarJobs();
+
+  } catch (err) {
+    alertBox.className = 'alert alert-err';
+    alertBox.textContent = `✕  ${err.message}`;
+    alertBox.hidden = false;
+    msg.textContent = '';
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = 'Analisar Job';
+    btnIcon.textContent = '▶';
+    progress.hidden = true;
+  }
+});
+
+// ── Modal de detalhes ───────────────────────────────────────────────────────
+async function abrirJob(id) {
+  const overlay = document.getElementById('modalOverlay');
+  const body    = document.getElementById('modalBody');
+  const title   = document.getElementById('modalTitle');
+  const meta    = document.getElementById('modalMeta');
+
+  overlay.hidden = false;
+  title.textContent = '—';
+  meta.textContent  = 'Carregando…';
+  body.innerHTML    = '<p style="color:var(--fg-3);padding:8px">Buscando detalhes…</p>';
+
+  try {
+    const r    = await fetch(`${API}/api/jobs/${id}`);
+    const job  = await r.json();
+    if (!r.ok) throw new Error(job.error);
+
+    title.textContent = job.num_job;
+    const dt = job.analisado_em
+      ? new Date(job.analisado_em).toLocaleString('pt-BR')
+      : '—';
+    meta.textContent = `Analisado em ${dt} · ${job.pasta_raiz}`;
+
+    body.innerHTML = renderModalBody(job);
+
+    // Toggle raw JSON
+    document.getElementById('rawToggle')?.addEventListener('click', () => {
+      const raw = document.getElementById('rawBlock');
+      const tog = document.getElementById('rawToggle');
+      raw.hidden = !raw.hidden;
+      tog.textContent = raw.hidden ? '▸ Ver JSON bruto' : '▾ Ocultar JSON bruto';
+    });
+  } catch (err) {
+    body.innerHTML = `<div class="alert alert-err">Erro ao carregar: ${err.message}</div>`;
+  }
+}
+
+function renderModalBody(job) {
+  // Checklist
+  const alertas = [
+    [job.alerta_sem_contrato,   'SEM CONTRATO'],
+    [job.alerta_sem_procuracao, 'SEM PROCURAÇÃO'],
+    [job.alerta_baixo_fat,      'FATURAMENTO MÉDIO ABAIXO DE R$ 20M'],
+    [job.alerta_regularize,     'COM REGULARIZE'],
+  ];
+  const temAlerta = alertas.some(([a]) => a);
+
+  const chkHtml = `
+    <div class="checklist">
+      <div class="checklist-header ${temAlerta ? 'err' : 'ok'}">
+        ${temAlerta ? '⚑ Há pendências no checklist' : '✔ Checklist sem pendências'}
+      </div>
+      ${alertas.map(([ativo, desc]) => `
+        <div class="checklist-item ${ativo ? 'active' : 'clear'}">
+          <span>${ativo ? '☒' : '☐'}</span>
+          <span>${desc}</span>
+        </div>`).join('')}
+    </div>`;
+
+  // Resultados por categoria
+  const cats = {
+    'Contrato':        ['contrato_existe','procuracao_existe','honorarios','gross_up','passivo'],
+    'QSA':             ['data_abertura','simples_nacional','socios'],
+    'Situação Fiscal': ['situacao_fiscal','regularize'],
+    'Perfil Prev.':    ['perfil'],
+    'Faturamento':     ['faturamento','fastpass'],
+  };
+
+  const LABELS = {
+    contrato_existe:   'Contrato Assinado',
+    procuracao_existe: 'Procuração',
+    honorarios:        'Honorários (%)',
+    gross_up:          'Gross Up',
+    passivo:           'Passivo',
+    data_abertura:     'Data de Abertura',
+    simples_nacional:  'Simples Nacional',
+    socios:            'Sócios (QSA)',
+    situacao_fiscal:   'Certidão Federal',
+    regularize:        'Regularize',
+    perfil:            'Perfil Prev.',
+    faturamento:       'Faturamento por Ano',
+    fastpass:          'Fastpass (≥ R$ 20M)',
+  };
+
+  const catsHtml = Object.entries(cats).map(([cat, fields]) => `
+    <div class="cat-section">
+      <div class="cat-label">${cat}</div>
+      ${fields.map(f => {
+        const val = job[f];
+        const isAlert = f === 'regularize' && val && val.toUpperCase().startsWith('SIM');
+        const rowClass = isAlert ? 'alert' : val ? 'ok' : 'miss';
+        const icon = isAlert ? '⚠' : val ? '✔' : '✕';
+
+        // Determina tipo da badge
+        let badgeHtml = '';
+        if (isAlert)      badgeHtml = `<span class="badge badge-err">Alerta</span>`;
+        else if (val)     badgeHtml = `<span class="badge badge-ok">Encontrado</span>`;
+        else              badgeHtml = `<span class="badge badge-err">Não encontrado</span>`;
+
+        const valHtml = val
+          ? `<div class="result-val">${val.replace(/\n/g, '<br>')}</div>`
+          : `<div class="result-val" style="color:var(--fg-3);font-style:italic">—</div>`;
+
+        return `<div class="result-row ${rowClass}">
+          <div class="result-icon">${icon}</div>
+          <div>
+            <div class="result-field">${LABELS[f] || f}</div>
+            ${valHtml}
+          </div>
+          <div class="result-badge">${badgeHtml}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+
+  // Raw JSON
+  const rawHtml = `
+    <div id="rawToggle" class="raw-toggle">▸ Ver JSON bruto</div>
+    <div id="rawBlock" class="raw-block" hidden>${
+      JSON.stringify(job.raw_resultado || {}, null, 2).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    }</div>`;
+
+  return chkHtml + catsHtml + rawHtml;
+}
+
+function fecharModal(e) {
+  if (e && e.target !== document.getElementById('modalOverlay')) return;
+  document.getElementById('modalOverlay').hidden = true;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') fecharModal();
+});
+
+// ── Init ────────────────────────────────────────────────────────────────────
+checkAPI();
+carregarJobs();
+setInterval(checkAPI, 15000);
+</script>
+</body>
+</html>

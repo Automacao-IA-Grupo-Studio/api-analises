@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/jobs/*.json
+*.log
+__pycache__/
+*.pyc
+.DS_Store
