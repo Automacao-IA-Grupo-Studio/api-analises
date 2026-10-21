@@ -4,6 +4,9 @@ services:
   api:
     build: .
     container_name: api-analises
+    # Só sobe com: docker compose --profile full up -d
+    # (no modo nativo do Windows o Node roda fora do Docker e usa a porta 3000)
+    profiles: ["full"]
     ports:
       - "3000:3000"
     environment:
