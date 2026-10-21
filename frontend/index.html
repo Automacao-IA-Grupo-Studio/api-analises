@@ -724,7 +724,7 @@
                 <th>Checklist</th>
                 <th>Contrato</th>
                 <th>Fastpass</th>
-                <th>Situação Fiscal</th>
+                <th>Regularize</th>
                 <th>Analisado em</th>
               </tr>
             </thead>
@@ -797,6 +797,10 @@ async function carregarJobs() {
   }
 }
 
+function esc(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function renderJobs(jobs) {
   const tbody = document.getElementById('jobsBody');
   document.getElementById('jobsCount').textContent = `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`;
@@ -833,13 +837,14 @@ function renderJobs(jobs) {
       ? `<span class="badge badge-warn">✕ Não</span>`
       : `<span style="color:var(--fg-3);font-size:11px">—</span>`;
 
-    const sfVal = j.situacao_fiscal || '';
-    const sfBadge = sfVal.includes('NEGATIVA')
-      ? `<span class="badge badge-ok" title="${sfVal}">Negativa</span>`
-      : sfVal.includes('EFEITOS')
-      ? `<span class="badge badge-warn" title="${sfVal}">PEFN</span>`
-      : sfVal.includes('POSITIVA')
-      ? `<span class="badge badge-err" title="${sfVal}">Positiva</span>`
+    const sfVal = j.regularize || '';
+    const sfTitle = esc(sfVal);
+    const sfBadge = sfVal.toUpperCase().startsWith('SIM')
+      ? `<span class="badge badge-err" title="${sfTitle}">Perfil</span>`
+      : sfVal.toLowerCase().startsWith('sem cadastro')
+      ? `<span class="badge badge-warn" title="${sfTitle}">Sem cadastro</span>`
+      : sfVal.toLowerCase().startsWith('n')
+      ? `<span class="badge badge-ok" title="${sfTitle}">Não</span>`
       : `<span style="color:var(--fg-3);font-size:11px">—</span>`;
 
     const alertsHtml = alertas.length
@@ -874,7 +879,7 @@ function filtrarJobs(q) {
   renderJobs(todosJobs.filter(j =>
     j.num_job.toLowerCase().includes(t) ||
     (j.pasta_raiz || '').toLowerCase().includes(t) ||
-    (j.situacao_fiscal || '').toLowerCase().includes(t)
+    (j.regularize || '').toLowerCase().includes(t)
   ));
 }
 
@@ -989,7 +994,6 @@ function renderModalBody(job) {
   // Checklist
   const alertas = [
     [job.alerta_sem_contrato,   'SEM CONTRATO'],
-    [job.alerta_sem_procuracao, 'SEM PROCURAÇÃO'],
     [job.alerta_baixo_fat,      'FATURAMENTO MÉDIO ABAIXO DE R$ 20M'],
     [job.alerta_regularize,     'COM REGULARIZE'],
   ];
@@ -1010,10 +1014,12 @@ function renderModalBody(job) {
   // Resultados por categoria
   const cats = {
     'Contrato':        ['contrato_existe','procuracao_existe','honorarios','gross_up','passivo'],
-    'QSA':             ['data_abertura','simples_nacional','socios'],
-    'Situação Fiscal': ['situacao_fiscal','regularize'],
+    'Data de Abertura': ['data_abertura'],
+    'Simples Nacional': ['simples_nacional'],
+    'QSA':             ['socios'],
+    'Regularize':      ['regularize'],
     'Perfil Prev.':    ['perfil'],
-    'Faturamento':     ['faturamento','fastpass'],
+    'Faturamento':     ['faturamento','fastpass','supply','finap'],
   };
 
   const LABELS = {
@@ -1025,11 +1031,12 @@ function renderModalBody(job) {
     data_abertura:     'Data de Abertura',
     simples_nacional:  'Simples Nacional',
     socios:            'Sócios (QSA)',
-    situacao_fiscal:   'Certidão Federal',
     regularize:        'Regularize',
     perfil:            'Perfil Prev.',
-    faturamento:       'Faturamento por Ano',
+    faturamento:       'Faturamento por ano e média',
     fastpass:          'Fastpass (≥ R$ 20M)',
+    supply:            'Supply (≥ R$ 30M)',
+    finap:             'Finap (≥ R$ 50M + indústria)',
   };
 
   const catsHtml = Object.entries(cats).map(([cat, fields]) => `
@@ -1038,18 +1045,20 @@ function renderModalBody(job) {
       ${fields.map(f => {
         const val = job[f];
         const isAlert = f === 'regularize' && val && val.toUpperCase().startsWith('SIM');
-        const rowClass = isAlert ? 'alert' : val ? 'ok' : 'miss';
-        const icon = isAlert ? '⚠' : val ? '✔' : '✕';
+        const pendente = f === 'procuracao_existe' && !val;
+        const rowClass = isAlert ? 'alert' : pendente ? 'ok' : val ? 'ok' : 'miss';
+        const icon = isAlert ? '⚠' : pendente ? '…' : val ? '✔' : '✕';
 
         // Determina tipo da badge
         let badgeHtml = '';
         if (isAlert)      badgeHtml = `<span class="badge badge-err">Alerta</span>`;
+        else if (pendente) badgeHtml = `<span class="badge badge-warn">Via Project</span>`;
         else if (val)     badgeHtml = `<span class="badge badge-ok">Encontrado</span>`;
         else              badgeHtml = `<span class="badge badge-err">Não encontrado</span>`;
 
         const valHtml = val
-          ? `<div class="result-val">${val.replace(/\n/g, '<br>')}</div>`
-          : `<div class="result-val" style="color:var(--fg-3);font-style:italic">—</div>`;
+          ? `<div class="result-val">${esc(val).replace(/\n/g, '<br>')}</div>`
+          : `<div class="result-val" style="color:var(--fg-3);font-style:italic">${pendente ? 'Em branco — definido pelo Project' : '—'}</div>`;
 
         return `<div class="result-row ${rowClass}">
           <div class="result-icon">${icon}</div>

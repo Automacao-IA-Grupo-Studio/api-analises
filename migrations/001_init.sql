@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS jobs_pro (
   -- ── Faturamento ───────────────────────────────────────────────────────────
   faturamento       TEXT           COMMENT 'Totais por ano (ECF)',
   fastpass          TEXT           COMMENT 'Sim/Não — média >= R$20M',
+  supply            TEXT           COMMENT 'Sim/Não — média >= R$30M',
+  finap             TEXT           COMMENT 'Sim/Não — média >= R$50M e indústria',
 
   -- ── Checklist de alertas ──────────────────────────────────────────────────
   alerta_sem_contrato   TINYINT(1) DEFAULT 0,

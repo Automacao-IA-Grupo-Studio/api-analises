@@ -33,6 +33,16 @@ async function iniciarDB() {
     for (const stmt of statements) {
       await conn.query(stmt);
     }
+    // Bancos já existentes: adiciona colunas novas (MySQL não tem ADD COLUMN IF NOT EXISTS)
+    const novas = { supply: 'TEXT NULL', finap: 'TEXT NULL' };
+    const [cols] = await conn.query('SHOW COLUMNS FROM jobs_pro');
+    const existentes = new Set(cols.map(c => c.Field));
+    for (const [nome, tipo] of Object.entries(novas)) {
+      if (!existentes.has(nome)) {
+        await conn.query(`ALTER TABLE jobs_pro ADD COLUMN ${nome} ${tipo}`);
+        console.log(`[DB] Coluna adicionada: ${nome}`);
+      }
+    }
     console.log('[DB] Tabelas verificadas/criadas com sucesso');
   } finally {
     conn.release();

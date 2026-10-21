@@ -19,7 +19,7 @@ exports.listarJobs = async (req, res) => {
         contrato_existe, procuracao_existe, honorarios, gross_up, passivo,
         data_abertura, simples_nacional, socios,
         situacao_fiscal, regularize, perfil,
-        faturamento, fastpass,
+        faturamento, fastpass, supply, finap,
         alerta_sem_contrato, alerta_sem_procuracao, alerta_baixo_fat, alerta_regularize,
         analisado_em, created_at
       FROM jobs_pro
@@ -153,10 +153,10 @@ exports.analisarJob = async (req, res) => {
           contrato_existe, procuracao_existe, honorarios, gross_up, passivo,
           data_abertura, simples_nacional, socios,
           situacao_fiscal, regularize, perfil,
-          faturamento, fastpass,
+          faturamento, fastpass, supply, finap,
           alerta_sem_contrato, alerta_sem_procuracao, alerta_baixo_fat, alerta_regularize,
           raw_resultado, status_analise, analisado_em
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', NOW())
         ON DUPLICATE KEY UPDATE
           pasta_raiz        = VALUES(pasta_raiz),
           contrato_existe   = VALUES(contrato_existe),
@@ -172,6 +172,8 @@ exports.analisarJob = async (req, res) => {
           perfil            = VALUES(perfil),
           faturamento       = VALUES(faturamento),
           fastpass          = VALUES(fastpass),
+          supply            = VALUES(supply),
+          finap             = VALUES(finap),
           alerta_sem_contrato   = VALUES(alerta_sem_contrato),
           alerta_sem_procuracao = VALUES(alerta_sem_procuracao),
           alerta_baixo_fat      = VALUES(alerta_baixo_fat),
@@ -187,7 +189,8 @@ exports.analisarJob = async (req, res) => {
         campo('simples_nacional'),  campo('socios'),
         campo('situacao_fiscal'),   campo('regularize'),
         campo('perfil'),            campo('faturamento'),
-        campo('fastpass'),
+        campo('fastpass'),          campo('supply'),
+        campo('finap'),
         alertaAtivo('SEM CONTRATO'),
         alertaAtivo('SEM PROCURAÇÃO'),
         alertaAtivo('FATURAMENTO MÉDIO ABAIXO DE R$ 20M'),
