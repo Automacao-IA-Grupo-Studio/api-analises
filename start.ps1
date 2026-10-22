@@ -1,15 +1,21 @@
-$PORT = if ($env:PORT) { $env:PORT } else { "3000" }
+$PORT = if ($env:PORT) { $env:PORT } else { "3030" }
 
 Write-Host "=== API Analises - Studio Fiscal ===" -ForegroundColor Cyan
 
 # 1. Docker precisa estar aberto (nao tenta abrir nem matar nada dele)
-docker info *> $null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Docker Desktop nao esta rodando. Abra-o e rode .\start.ps1 de novo." -ForegroundColor Red
+$dockerOk = $false
+for ($i = 1; $i -le 60; $i++) {
+    docker info *> $null
+    if ($LASTEXITCODE -eq 0) { $dockerOk = $true; break }
+    if ($i -eq 1) { Write-Host "Aguardando o Docker Desktop (abra-o se nao iniciar sozinho)..." -ForegroundColor Yellow }
+    Start-Sleep -Seconds 3
+}
+if (-not $dockerOk) {
+    Write-Host "Docker Desktop nao respondeu em 3 min. Abra-o e rode .\start.ps1 de novo." -ForegroundColor Red
     exit 1
 }
 
-# 2. Remove container antigo da API (ele ocupava a porta 3000); MySQL nao e tocado
+# 2. Remove container antigo da API (ele ocupava a porta 3030); MySQL nao e tocado
 docker rm -f api-analises *> $null
 
 # 3. Sobe so o MySQL e espera ficar pronto
@@ -37,5 +43,6 @@ foreach ($c in $conns) {
 if (-not (Test-Path "node_modules")) { npm install }
 if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
 
-Write-Host "Acesse: http://localhost:$PORT" -ForegroundColor Green
+$env:PORT = $PORT
+Write-Host "Acesse: http://localhost:$PORT  (de outra maquina: http://IP-DA-VM:$PORT)" -ForegroundColor Green
 node server.js

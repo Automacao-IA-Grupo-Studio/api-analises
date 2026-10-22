@@ -28,9 +28,9 @@ COPY . .
 RUN mkdir -p /app/data/jobs
 
 # ── Variáveis de ambiente padrão ──────────────────────────────────────────────
-ENV PORT=3000 \
+ENV PORT=3030 \
     PYTHON_BIN=python3 \
     NODE_ENV=production
 
-EXPOSE 3000
+EXPOSE 3030
 CMD ["node", "server.js"]
