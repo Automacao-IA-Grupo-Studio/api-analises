@@ -1,0 +1,114 @@
+# =============================================================================
+#  init_vm.txt - Prepara uma VM Windows (SEM Docker) para rodar a API Analises
+# =============================================================================
+#  Instala: Node.js, Python, Tesseract (OCR, com idioma portugues) e MySQL.
+#  Depois: cria o banco, gera o .env, instala dependencias, libera a porta 3030
+#  no firewall e agenda a API para subir sozinha no logon.
+#
+#  COMO USAR (PowerShell como ADMINISTRADOR, dentro da pasta api-analises):
+#
+#    powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (Get-Content .\init_vm.txt -Raw)"
+#
+#  Pode rodar de novo sem medo: o que ja esta instalado e pulado.
+#  Texto sem acentos de proposito (evita erro de encoding no PowerShell).
+# =============================================================================
+
+$ErrorActionPreference = "Stop"
+$dir = (Get-Location).Path
+
+# ---- 0. Verificacoes --------------------------------------------------------
+if (-not (Test-Path "$dir\server.js")) { throw "Rode dentro da pasta api-analises (onde esta o server.js)." }
+$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $admin) { throw "Abra o PowerShell como Administrador." }
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "winget nao encontrado. Instale o 'App Installer' da Microsoft Store." }
+
+function Atualizar-Path {
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+function Instalar-Winget($id) {
+    Write-Host "  Instalando $id ..." -ForegroundColor Yellow
+    winget install --id $id -e --silent --accept-package-agreements --accept-source-agreements
+    Atualizar-Path
+}
+
+function Python-Ok {
+    try { return ((& python --version 2>&1) -match "Python 3") } catch { return $false }
+}
+
+# ---- 1. Node.js -------------------------------------------------------------
+Write-Host "[1/8] Node.js" -ForegroundColor Cyan
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Instalar-Winget "OpenJS.NodeJS.LTS" } else { Write-Host "  ok" -ForegroundColor Green }
+
+# ---- 2. Python --------------------------------------------------------------
+Write-Host "[2/8] Python" -ForegroundColor Cyan
+if (-not (Python-Ok)) { Instalar-Winget "Python.Python.3.12" } else { Write-Host "  ok" -ForegroundColor Green }
+if (-not (Python-Ok)) { throw "Python nao ficou disponivel. Feche e abra o PowerShell (Administrador) e rode de novo." }
+
+# ---- 3. Tesseract + idioma portugues ---------------------------------------
+Write-Host "[3/8] Tesseract OCR" -ForegroundColor Cyan
+$tessDir = "C:\Program Files\Tesseract-OCR"
+if (-not (Test-Path "$tessDir\tesseract.exe")) { Instalar-Winget "UB-Mannheim.TesseractOCR" } else { Write-Host "  ok" -ForegroundColor Green }
+if (-not (Test-Path "$tessDir\tessdata\por.traineddata")) {
+    Write-Host "  Baixando idioma portugues..." -ForegroundColor Yellow
+    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/tesseract-ocr/tessdata/raw/main/por.traineddata" -OutFile "$tessDir\tessdata\por.traineddata"
+}
+
+# ---- 4. MySQL ---------------------------------------------------------------
+Write-Host "[4/8] MySQL" -ForegroundColor Cyan
+if (-not (Get-Service -Name "MySQL*" -ErrorAction SilentlyContinue)) { Instalar-Winget "Oracle.MySQL" } else { Write-Host "  ok" -ForegroundColor Green }
+$svc = Get-Service -Name "MySQL*" -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $svc) {
+    throw "O servico do MySQL nao foi criado. Conclua a instalacao do MySQL (assistente/Installer), defina a senha do root e rode este arquivo de novo."
+}
+if ($svc.Status -ne "Running") { Start-Service $svc.Name }
+Set-Service -Name $svc.Name -StartupType Automatic
+
+$mysql = Get-ChildItem "C:\Program Files\MySQL" -Recurse -Filter mysql.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $mysql) { throw "mysql.exe nao encontrado em C:\Program Files\MySQL." }
+
+# ---- 5. Banco de dados ------------------------------------------------------
+Write-Host "[5/8] Banco api_analises" -ForegroundColor Cyan
+$senha = Read-Host "  Senha do usuario root do MySQL (Enter se estiver vazia)"
+$mysqlArgs = @("-u", "root", "-e", "CREATE DATABASE IF NOT EXISTS api_analises CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
+if ($senha) { $mysqlArgs = @("-u", "root", "--password=$senha", "-e", "CREATE DATABASE IF NOT EXISTS api_analises CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;") }
+& $mysql.FullName @mysqlArgs
+if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel criar o banco (senha do root incorreta?)." }
+Write-Host "  ok" -ForegroundColor Green
+
+# ---- 6. .env ----------------------------------------------------------------
+Write-Host "[6/8] Arquivo .env" -ForegroundColor Cyan
+if (-not (Test-Path "$dir\.env")) { Copy-Item "$dir\.env.example" "$dir\.env" }
+$global:env_txt = Get-Content "$dir\.env" -Raw
+function Set-EnvVar($chave, $valor) {
+    $novo = "$chave=$valor"
+    if ($global:env_txt -match "(?m)^$chave=") {
+        $global:env_txt = [regex]::Replace($global:env_txt, "(?m)^$chave=.*$", $novo.Replace('$', '$$'))
+    } else {
+        $global:env_txt = $global:env_txt.TrimEnd() + "`r`n" + $novo + "`r`n"
+    }
+}
+Set-EnvVar "DB_HOST" "localhost"
+Set-EnvVar "DB_PORT" "3306"
+Set-EnvVar "DB_USER" "root"
+Set-EnvVar "DB_PASS" $senha
+Set-EnvVar "DB_NAME" "api_analises"
+Set-EnvVar "PORT" "3030"
+Set-EnvVar "PYTHON_BIN" "python"
+Set-Content -Path "$dir\.env" -Value $global:env_txt -Encoding UTF8
+Write-Host "  ok" -ForegroundColor Green
+
+# ---- 7. Dependencias --------------------------------------------------------
+Write-Host "[7/8] Dependencias (npm + pip)" -ForegroundColor Cyan
+npm install
+python -m pip install -r "$dir\requirements.txt" --disable-pip-version-check
+Write-Host "  ok" -ForegroundColor Green
+
+# ---- 8. Firewall + inicio automatico ---------------------------------------
+Write-Host "[8/8] Firewall (porta 3030) e inicio automatico" -ForegroundColor Cyan
+& "$dir\instalar-vm.ps1" -SemDocker
+Start-ScheduledTask -TaskName "API Analises"
+
+Write-Host ""
+Write-Host "Pronto! A API esta subindo em background (aguarde ~15s)." -ForegroundColor Green
+Write-Host "Se algo falhar, rode em primeiro plano para ver os logs:  .\start.ps1 -SemDocker" -ForegroundColor Yellow

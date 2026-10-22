@@ -1,6 +1,8 @@
 # Rodar UMA vez na VM, em PowerShell como Administrador:
-#   .\instalar-vm.ps1
+#   .\instalar-vm.ps1              (MySQL no Docker)
+#   .\instalar-vm.ps1 -SemDocker   (MySQL instalado no Windows)
 #Requires -RunAsAdministrator
+param([switch]$SemDocker)
 $PORT = 3030
 $dir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -12,7 +14,7 @@ Write-Host "Firewall: porta $PORT liberada" -ForegroundColor Green
 
 # 2. Sobe a API sozinha quando este usuario fizer logon (acessa o \\studiofiscal com as credenciais dele)
 $acao = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $dir `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dir\start.ps1`""
+    -Argument ("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dir\start.ps1`"" + $(if ($SemDocker) { " -SemDocker" } else { "" }))
 $gatilho = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 Register-ScheduledTask -TaskName "API Analises" -Action $acao -Trigger $gatilho `
     -User "$env:USERDOMAIN\$env:USERNAME" -RunLevel Highest -Force | Out-Null
