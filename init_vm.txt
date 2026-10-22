@@ -2,6 +2,8 @@
 #  init_vm.txt - Prepara uma VM Windows (SEM Docker) para rodar a API Analises
 # =============================================================================
 #  Instala: Node.js, Python, Tesseract (OCR, com idioma portugues) e MySQL.
+#  Download direto dos sites oficiais (NAO depende de winget/Microsoft Store -
+#  Windows Server normalmente nao tem winget disponivel).
 #  Depois: cria o banco, gera o .env, instala dependencias, libera a porta 3030
 #  no firewall e agenda a API para subir sozinha no logon.
 #
@@ -11,25 +13,34 @@
 #
 #  Pode rodar de novo sem medo: o que ja esta instalado e pulado.
 #  Texto sem acentos de proposito (evita erro de encoding no PowerShell).
+#
+#  Se um link quebrar no futuro (versao saiu do ar), atualize a variavel
+#  correspondente logo abaixo (NODE_URL, PYTHON_URL, TESSERACT_URL, MYSQL_URL).
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
 $dir = (Get-Location).Path
+$tmp = "$env:TEMP\api-analises-setup"
+New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+
+# ---- URLs oficiais (fixadas; atualize aqui se uma versao sair do ar) --------
+$NODE_URL      = "https://nodejs.org/dist/v24.22.1/node-v24.22.1-x64.msi"
+$PYTHON_URL    = "https://www.python.org/ftp/python/3.13.9/python-3.13.9-amd64.exe"
+$TESSERACT_URL = "https://github.com/tesseract-ocr/tesseract/releases/download/5.5.3/tesseract-ocr-w64-setup-5.5.3.20260724.exe"
+$MYSQL_URL     = "https://dev.mysql.com/get/Downloads/MySQLInstaller/mysql-installer-community-8.0.46.0.msi"
 
 # ---- 0. Verificacoes --------------------------------------------------------
 if (-not (Test-Path "$dir\server.js")) { throw "Rode dentro da pasta api-analises (onde esta o server.js)." }
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $admin) { throw "Abra o PowerShell como Administrador." }
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "winget nao encontrado. Instale o 'App Installer' da Microsoft Store." }
 
 function Atualizar-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 }
 
-function Instalar-Winget($id) {
-    Write-Host "  Instalando $id ..." -ForegroundColor Yellow
-    winget install --id $id -e --silent --accept-package-agreements --accept-source-agreements
-    Atualizar-Path
+function Baixar($url, $destino) {
+    Write-Host "  Baixando $(Split-Path -Leaf $destino) ..." -ForegroundColor Yellow
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destino
 }
 
 function Python-Ok {
@@ -38,17 +49,34 @@ function Python-Ok {
 
 # ---- 1. Node.js -------------------------------------------------------------
 Write-Host "[1/8] Node.js" -ForegroundColor Cyan
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Instalar-Winget "OpenJS.NodeJS.LTS" } else { Write-Host "  ok" -ForegroundColor Green }
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    $msi = "$tmp\node.msi"
+    Baixar $NODE_URL $msi
+    Write-Host "  Instalando..." -ForegroundColor Yellow
+    Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
+    Atualizar-Path
+} else { Write-Host "  ok" -ForegroundColor Green }
 
 # ---- 2. Python --------------------------------------------------------------
 Write-Host "[2/8] Python" -ForegroundColor Cyan
-if (-not (Python-Ok)) { Instalar-Winget "Python.Python.3.12" } else { Write-Host "  ok" -ForegroundColor Green }
+if (-not (Python-Ok)) {
+    $exe = "$tmp\python.exe"
+    Baixar $PYTHON_URL $exe
+    Write-Host "  Instalando..." -ForegroundColor Yellow
+    Start-Process $exe -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0" -Wait
+    Atualizar-Path
+} else { Write-Host "  ok" -ForegroundColor Green }
 if (-not (Python-Ok)) { throw "Python nao ficou disponivel. Feche e abra o PowerShell (Administrador) e rode de novo." }
 
 # ---- 3. Tesseract + idioma portugues ---------------------------------------
 Write-Host "[3/8] Tesseract OCR" -ForegroundColor Cyan
 $tessDir = "C:\Program Files\Tesseract-OCR"
-if (-not (Test-Path "$tessDir\tesseract.exe")) { Instalar-Winget "UB-Mannheim.TesseractOCR" } else { Write-Host "  ok" -ForegroundColor Green }
+if (-not (Test-Path "$tessDir\tesseract.exe")) {
+    $exe = "$tmp\tesseract-setup.exe"
+    Baixar $TESSERACT_URL $exe
+    Write-Host "  Instalando..." -ForegroundColor Yellow
+    Start-Process $exe -ArgumentList "/S" -Wait
+} else { Write-Host "  ok" -ForegroundColor Green }
 if (-not (Test-Path "$tessDir\tessdata\por.traineddata")) {
     Write-Host "  Baixando idioma portugues..." -ForegroundColor Yellow
     Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/tesseract-ocr/tessdata/raw/main/por.traineddata" -OutFile "$tessDir\tessdata\por.traineddata"
@@ -56,10 +84,15 @@ if (-not (Test-Path "$tessDir\tessdata\por.traineddata")) {
 
 # ---- 4. MySQL ---------------------------------------------------------------
 Write-Host "[4/8] MySQL" -ForegroundColor Cyan
-if (-not (Get-Service -Name "MySQL*" -ErrorAction SilentlyContinue)) { Instalar-Winget "Oracle.MySQL" } else { Write-Host "  ok" -ForegroundColor Green }
+if (-not (Get-Service -Name "MySQL*" -ErrorAction SilentlyContinue)) {
+    $msi = "$tmp\mysql-installer.msi"
+    Baixar $MYSQL_URL $msi
+    Write-Host "  Instalando MySQL Installer..." -ForegroundColor Yellow
+    Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
+}
 $svc = Get-Service -Name "MySQL*" -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $svc) {
-    throw "O servico do MySQL nao foi criado. Conclua a instalacao do MySQL (assistente/Installer), defina a senha do root e rode este arquivo de novo."
+    throw "O servico do MySQL nao foi criado. Abra 'MySQL Installer' no menu Iniciar, adicione o produto 'MySQL Server', conclua o assistente (defina a senha do root) e rode este arquivo de novo."
 }
 if ($svc.Status -ne "Running") { Start-Service $svc.Name }
 Set-Service -Name $svc.Name -StartupType Automatic
