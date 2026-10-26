@@ -73,9 +73,15 @@ New-Item -ItemType Directory -Path "$root\dist\build" -Force | Out-Null
 Copy-Item "$buildDist\analisar_job.exe" "$root\dist\build\analisar_job.exe" -Force
 
 # ---- 6. Smoke test ---------------------------------------------------------
+# Chama o .exe de proposito com uma pasta que nao existe so pra conferir que
+# ele devolve um erro amigavel em JSON. Isso faz o processo sair com codigo
+# != 0 (comportamento esperado, nao e falha do build) - por isso NAO checamos
+# $LASTEXITCODE aqui, e resetamos no final pra nao vazar pro script que chamou
+# este (build.ps1), que senao interpretaria como "build falhou".
 Write-Host ""
 Write-Host "Teste rapido (sem pasta real -> espera erro amigavel em JSON):" -ForegroundColor Cyan
 & "$root\dist\build\analisar_job.exe" "C:\pasta-que-nao-existe"
 
 Write-Host ""
 Write-Host "OK: dist\build\analisar_job.exe gerado com sucesso." -ForegroundColor Green
+exit 0
