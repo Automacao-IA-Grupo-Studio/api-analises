@@ -3,7 +3,7 @@ const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
 const routes  = require('./routes/api.routes');
-const { iniciarDB, getPool } = require('./db/connection');
+const { iniciarDB, getDB } = require('./db/connection');
 
 const app  = express();
 const PORT = process.env.PORT || 3030;
@@ -11,10 +11,10 @@ const PORT = process.env.PORT || 3030;
 app.use(cors());
 app.use(express.json());
 
-// Healthcheck: confirma que a API está de pé e o MySQL responde
+// Healthcheck: confirma que a API está de pé e o banco local responde
 app.get('/health', async (req, res) => {
   try {
-    await getPool().query('SELECT 1');
+    getDB().prepare('SELECT 1').get();
     res.json({ status: 'ok', db: 'ok' });
   } catch (err) {
     res.status(503).json({ status: 'error', db: 'down', message: err.message });
@@ -45,7 +45,6 @@ iniciarDB()
   })
   .catch(err => {
     console.error('[FATAL] Erro ao inicializar banco:', err.message || err);
-    console.error('[FATAL] Verifique se o MySQL está rodando e as configs do .env estão corretas.');
     console.error('[FATAL] Detalhes:', err);
     process.exit(1);
   });

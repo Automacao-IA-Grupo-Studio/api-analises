@@ -280,25 +280,44 @@ def candidatos(raiz: str, elemento: dict):
 #  OCR VIA TESSERACT
 # ══════════════════════════════════════════════════════════════════════════════
 def _garantir_tesseract() -> bool:
-    """Localiza Tesseract no Windows ou Linux/Docker."""
+    """Localiza o Tesseract: portátil (empacotado), variável de ambiente,
+    instalação padrão do Windows, ou no PATH (Linux/Docker)."""
     import shutil
 
-    # Docker / Linux: tesseract instalado via apt
+    def _usar(caminho: str) -> bool:
+        if not os.path.exists(caminho):
+            return False
+        try:
+            import pytesseract
+            pytesseract.pytesseract.tesseract_cmd = caminho
+        except ImportError:
+            pass
+        return True
+
+    # 1) Variável de ambiente explícita (setada pelo launcher ao lado do .exe portátil)
+    env_cmd = os.environ.get("TESSERACT_CMD")
+    if env_cmd and _usar(env_cmd):
+        return True
+
+    # 2) Tesseract portátil ao lado do próprio executável (empacotado com PyInstaller)
+    #    sys.executable = caminho do analisar_job.exe quando congelado
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+        for rel in (r"tesseract\tesseract.exe", r"..\tesseract\tesseract.exe"):
+            if _usar(os.path.join(base, rel)):
+                return True
+
+    # 3) Docker / Linux: tesseract instalado via apt (no PATH)
     if shutil.which("tesseract"):
         return True
 
-    # Windows: caminhos padrão
+    # 4) Windows: instalação padrão do instalador oficial
     if os.name == 'nt':
         for p in [
             r"C:\Program Files\Tesseract-OCR\tesseract.exe",
             r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
         ]:
-            if os.path.exists(p):
-                try:
-                    import pytesseract
-                    pytesseract.pytesseract.tesseract_cmd = p
-                except ImportError:
-                    pass
+            if _usar(p):
                 return True
 
     _log("      [ocr] Tesseract não encontrado. Instale via:")

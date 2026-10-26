@@ -1,22 +1,14 @@
 services:
 
-  # ── API Node.js + Python ────────────────────────────────────────────────────
+  # ── API Node.js + Python (banco SQLite embutido, sem serviço externo) ───────
   api:
     build: .
     container_name: api-analises
-    # Só sobe com: docker compose --profile full up -d
-    # (no modo nativo do Windows o Node roda fora do Docker e usa a porta 3030)
-    profiles: ["full"]
     ports:
       - "3030:3030"
     environment:
       - PORT=3030
       - PYTHON_BIN=python3
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_USER=root
-      - DB_PASS=studiofiscal
-      - DB_NAME=api_analises
       # PATH_BASE: caminho base montado abaixo
       - PATH_BASE=/mnt/temporarios
     volumes:
@@ -25,31 +17,6 @@ services:
       #   //studiofiscal/Temporarios:/mnt/temporarios:ro
       # Ajuste o caminho do lado esquerdo conforme o mapeamento da sua máquina:
       - ${SHARE_PATH:-./dados-exemplo}:/mnt/temporarios:ro
-      # Persiste os JSONs sidecar
-      - ./data/jobs:/app/data/jobs
-    depends_on:
-      mysql:
-        condition: service_healthy
+      # Persiste o banco SQLite e os JSONs sidecar
+      - ./data:/app/data
     restart: unless-stopped
-
-  # ── MySQL 8 ─────────────────────────────────────────────────────────────────
-  mysql:
-    image: mysql:8.0
-    container_name: api-analises-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: studiofiscal
-      MYSQL_DATABASE:      api_analises
-      MYSQL_ROOT_HOST:     '%'
-    volumes:
-      - mysql_data:/var/lib/mysql
-    ports:
-      - "3307:3306"    # Expõe na 3307 para não conflitar com MySQL local
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pstudiofiscal"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  mysql_data:

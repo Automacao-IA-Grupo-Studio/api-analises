@@ -1,50 +1,58 @@
 CREATE TABLE IF NOT EXISTS jobs_pro (
-  id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  num_job           VARCHAR(100)   NOT NULL COMMENT 'Identificador do job (ex: 001 - EMPRESA)',
-  pasta_raiz        VARCHAR(1000)  NOT NULL COMMENT 'Caminho completo analisado',
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  num_job           TEXT    NOT NULL,                 -- Identificador do job (ex: 001 - EMPRESA)
+  pasta_raiz        TEXT    NOT NULL,                 -- Caminho completo analisado
 
   -- ── Contrato ──────────────────────────────────────────────────────────────
-  contrato_existe   TEXT           COMMENT 'Sim — <arquivo> | nulo se não encontrado',
-  procuracao_existe TEXT           COMMENT 'Sim — <arquivo> | nulo se não encontrado',
-  honorarios        TEXT           COMMENT 'Percentual extraído do contrato',
-  gross_up          TEXT           COMMENT 'Gross up extraído do contrato',
-  passivo           TEXT           COMMENT 'Menção a passivos (booleano)',
+  contrato_existe   TEXT,                              -- Sim — <arquivo> | nulo se não encontrado
+  procuracao_existe TEXT,                              -- Sim — <arquivo> | nulo se não encontrado
+  honorarios        TEXT,                              -- Percentual extraído do contrato
+  gross_up          TEXT,                              -- Gross up extraído do contrato
+  passivo           TEXT,                              -- Menção a passivos (booleano)
 
   -- ── QSA / Receita Federal ─────────────────────────────────────────────────
-  data_abertura     TEXT           COMMENT 'Data de constituição (CNPJ Matriz)',
-  simples_nacional  TEXT           COMMENT 'Situação no Simples Nacional',
-  socios            TEXT           COMMENT 'Sócios e administradores (múltiplos)',
+  data_abertura     TEXT,                              -- Data de constituição (CNPJ Matriz)
+  simples_nacional  TEXT,                              -- Situação no Simples Nacional
+  socios            TEXT,                              -- Sócios e administradores (múltiplos)
 
   -- ── Situação Fiscal ───────────────────────────────────────────────────────
-  situacao_fiscal   TEXT           COMMENT 'Tipo de certidão federal',
-  regularize        TEXT           COMMENT 'SIM se arquivo REGULARIZE encontrado',
+  situacao_fiscal   TEXT,                              -- Tipo de certidão federal
+  regularize        TEXT,                              -- SIM se arquivo REGULARIZE encontrado
 
   -- ── Perfil Previdenciário ─────────────────────────────────────────────────
-  perfil            TEXT           COMMENT 'Acima ou abaixo do limiar prev.',
+  perfil            TEXT,                              -- Acima ou abaixo do limiar prev.
 
   -- ── Faturamento ───────────────────────────────────────────────────────────
-  faturamento       TEXT           COMMENT 'Totais por ano (ECF)',
-  fastpass          TEXT           COMMENT 'Sim/Não — média >= R$20M',
-  supply            TEXT           COMMENT 'Sim/Não — média >= R$30M',
-  finap             TEXT           COMMENT 'Sim/Não — média >= R$50M e indústria',
+  faturamento       TEXT,                              -- Totais por ano (ECF)
+  fastpass          TEXT,                              -- Sim/Não — média >= R$20M
+  supply            TEXT,                              -- Sim/Não — média >= R$30M
+  finap             TEXT,                              -- Sim/Não — média >= R$50M e indústria
 
   -- ── Checklist de alertas ──────────────────────────────────────────────────
-  alerta_sem_contrato   TINYINT(1) DEFAULT 0,
-  alerta_sem_procuracao TINYINT(1) DEFAULT 0,
-  alerta_baixo_fat      TINYINT(1) DEFAULT 0,
-  alerta_regularize     TINYINT(1) DEFAULT 0,
+  alerta_sem_contrato   INTEGER NOT NULL DEFAULT 0,
+  alerta_sem_procuracao INTEGER NOT NULL DEFAULT 0,
+  alerta_baixo_fat      INTEGER NOT NULL DEFAULT 0,
+  alerta_regularize     INTEGER NOT NULL DEFAULT 0,
 
   -- ── Resultado completo (JSON bruto para debug) ────────────────────────────
-  raw_resultado     JSON           COMMENT 'Array completo retornado pelo analisador',
+  raw_resultado     TEXT,                              -- Array completo retornado pelo analisador (JSON serializado)
 
   -- ── Status da análise ─────────────────────────────────────────────────────
-  status_analise    ENUM('ok','erro') NOT NULL DEFAULT 'ok',
-  erro_msg          TEXT           COMMENT 'Mensagem de erro se status = erro',
+  status_analise    TEXT    NOT NULL DEFAULT 'ok',     -- 'ok' | 'erro'
+  erro_msg          TEXT,                              -- Mensagem de erro se status = erro
 
-  analisado_em      DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at        DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at        DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  analisado_em      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+  created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+  updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+);
 
-  INDEX idx_num_job (num_job),
-  INDEX idx_analisado_em (analisado_em)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+CREATE UNIQUE INDEX IF NOT EXISTS idx_num_job_unique ON jobs_pro (num_job);
+CREATE INDEX IF NOT EXISTS idx_analisado_em ON jobs_pro (analisado_em);
+
+-- Mantém updated_at em dia a cada UPDATE (SQLite não tem "ON UPDATE CURRENT_TIMESTAMP" nativo)
+CREATE TRIGGER IF NOT EXISTS trg_jobs_pro_updated_at
+AFTER UPDATE ON jobs_pro
+FOR EACH ROW
+BEGIN
+  UPDATE jobs_pro SET updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime') WHERE id = NEW.id;
+END;

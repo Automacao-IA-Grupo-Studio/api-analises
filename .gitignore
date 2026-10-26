@@ -1,7 +1,14 @@
 node_modules/
 .env
-data/jobs/*.json
+data/
 *.log
 __pycache__/
 *.pyc
 .DS_Store
+
+# Artefatos de build (gerados por build.ps1 / build_python.ps1)
+dist/
+build/.venv-build/
+build/.pyinstaller-work/
+build/.pyinstaller-dist/
+build/*.spec

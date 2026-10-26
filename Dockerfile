@@ -28,6 +28,7 @@ COPY . .
 RUN mkdir -p /app/data/jobs
 
 # ── Variáveis de ambiente padrão ──────────────────────────────────────────────
+# (Banco agora é SQLite local — não precisa mais de DB_HOST/PORT/USER/PASS)
 ENV PORT=3030 \
     PYTHON_BIN=python3 \
     NODE_ENV=production
