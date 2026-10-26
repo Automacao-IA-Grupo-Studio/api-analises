@@ -1,14 +1,26 @@
 # =============================================================================
-#  init_vm.txt - Prepara uma VM Windows (SEM Docker) para rodar a API Analises
+#  init_vm.txt - Prepara uma VM Windows para rodar a API Analises (modo API)
 # =============================================================================
-#  Instala: Node.js, Python e Tesseract (OCR, com idioma portugues).
+#  Instala: Node.js, Python, Tesseract (OCR, idioma portugues) e PM2.
 #  Download direto dos sites oficiais (NAO depende de winget/Microsoft Store -
 #  Windows Server normalmente nao tem winget disponivel).
-#  O banco de dados e SQLite local - nao precisa instalar nenhum servidor.
-#  Depois: gera o .env, instala dependencias, libera a porta 3030 no firewall
-#  e agenda a API para subir sozinha no logon.
 #
-#  COMO USAR (PowerShell como ADMINISTRADOR, dentro da pasta api-analises):
+#  O banco de dados e MySQL, rodando dentro de um container Docker (veja
+#  docker-compose.yml). A API em si (Node) roda FORA do Docker, gerenciada
+#  pelo PM2 (ver ecosystem.config.js) - isso evita o problema de acesso aos
+#  compartilhamentos de rede (\\studiofiscal\...) que acontecia quando a API
+#  tambem rodava dentro de um container.
+#
+#  Pre-requisito MANUAL (nao automatizado por este script): Docker Desktop
+#  precisa estar instalado e rodando na VM antes de continuar (exige WSL2 e
+#  normalmente um reboot). Baixe em https://www.docker.com/products/docker-desktop/
+#
+#  Depois: gera o .env, sobe o MySQL via docker compose, instala dependencias,
+#  libera a porta 3030 no firewall e agenda a API (via PM2) para subir sozinha
+#  no logon.
+#
+#  COMO USAR (PowerShell como ADMINISTRADOR, dentro da pasta api-analises,
+#  com o Docker Desktop ja instalado e rodando):
 #
 #    powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (Get-Content .\init_vm.txt -Raw)"
 #
@@ -18,9 +30,9 @@
 #  Se um link quebrar no futuro (versao saiu do ar), atualize a variavel
 #  correspondente logo abaixo (NODE_URL, PYTHON_URL, TESSERACT_URL).
 #
-#  Dica: se o objetivo e distribuir a API para OUTRAS maquinas sem instalar
-#  nada nelas, rode .\build.ps1 depois deste script - ele gera um pacote
-#  autocontido (dist\ApiAnalises\) que nao precisa deste init_vm.txt no destino.
+#  Dica: se o objetivo e distribuir o APP DESKTOP (sem API, sem banco) para
+#  maquinas de usuario final, use .\build.ps1 em vez deste script - ele gera
+#  um pacote autocontido (dist\AnaliseDesktop\) independente deste fluxo.
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +49,9 @@ $TESSERACT_URL = "https://github.com/tesseract-ocr/tesseract/releases/download/5
 if (-not (Test-Path "$dir\server.js")) { throw "Rode dentro da pasta api-analises (onde esta o server.js)." }
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $admin) { throw "Abra o PowerShell como Administrador." }
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    throw "Docker nao encontrado. Instale o Docker Desktop (https://www.docker.com/products/docker-desktop/), abra-o pelo menos uma vez e rode este script de novo."
+}
 
 function Atualizar-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
@@ -52,7 +67,7 @@ function Python-Ok {
 }
 
 # ---- 1. Node.js -------------------------------------------------------------
-Write-Host "[1/6] Node.js" -ForegroundColor Cyan
+Write-Host "[1/7] Node.js" -ForegroundColor Cyan
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     $msi = "$tmp\node.msi"
     Baixar $NODE_URL $msi
@@ -62,7 +77,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 } else { Write-Host "  ok" -ForegroundColor Green }
 
 # ---- 2. Python --------------------------------------------------------------
-Write-Host "[2/6] Python" -ForegroundColor Cyan
+Write-Host "[2/7] Python" -ForegroundColor Cyan
 if (-not (Python-Ok)) {
     $exe = "$tmp\python.exe"
     Baixar $PYTHON_URL $exe
@@ -73,7 +88,7 @@ if (-not (Python-Ok)) {
 if (-not (Python-Ok)) { throw "Python nao ficou disponivel. Feche e abra o PowerShell (Administrador) e rode de novo." }
 
 # ---- 3. Tesseract + idioma portugues ---------------------------------------
-Write-Host "[3/6] Tesseract OCR" -ForegroundColor Cyan
+Write-Host "[3/7] Tesseract OCR" -ForegroundColor Cyan
 $tessDir = "C:\Program Files\Tesseract-OCR"
 if (-not (Test-Path "$tessDir\tesseract.exe")) {
     $exe = "$tmp\tesseract-setup.exe"
@@ -86,22 +101,32 @@ if (-not (Test-Path "$tessDir\tessdata\por.traineddata")) {
     Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/por.traineddata" -OutFile "$tessDir\tessdata\por.traineddata"
 }
 
-# ---- 4. .env ----------------------------------------------------------------
-Write-Host "[4/6] Arquivo .env" -ForegroundColor Cyan
-if (-not (Test-Path "$dir\.env")) { Copy-Item "$dir\.env.example" "$dir\.env" }
-Write-Host "  ok (banco SQLite local, nada a configurar)" -ForegroundColor Green
+# ---- 4. PM2 -------------------------------------------------------------------
+Write-Host "[4/7] PM2 (gerenciador de processo da API)" -ForegroundColor Cyan
+if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    npm install -g pm2
+    Atualizar-Path
+} else { Write-Host "  ok" -ForegroundColor Green }
 
-# ---- 5. Dependencias --------------------------------------------------------
-Write-Host "[5/6] Dependencias (npm + pip)" -ForegroundColor Cyan
+# ---- 5. .env ------------------------------------------------------------------
+Write-Host "[5/7] Arquivo .env" -ForegroundColor Cyan
+if (-not (Test-Path "$dir\.env")) { Copy-Item "$dir\.env.example" "$dir\.env" }
+Write-Host "  ok (confira DB_PASSWORD/DB_ROOT_PASSWORD no .env antes de ir pra producao)" -ForegroundColor Green
+
+# ---- 6. Dependencias + MySQL via Docker ---------------------------------------
+Write-Host "[6/7] Dependencias (npm + pip) e MySQL (docker compose)" -ForegroundColor Cyan
 npm install
 python -m pip install -r "$dir\requirements.txt" --disable-pip-version-check
+docker compose up -d
+Write-Host "  Aguardando o MySQL ficar pronto..." -ForegroundColor Yellow
+Start-Sleep -Seconds 10
 Write-Host "  ok" -ForegroundColor Green
 
-# ---- 6. Firewall + inicio automatico ---------------------------------------
-Write-Host "[6/6] Firewall (porta 3030) e inicio automatico" -ForegroundColor Cyan
+# ---- 7. Firewall + inicio automatico (via PM2) --------------------------------
+Write-Host "[7/7] Firewall (porta 3030) e inicio automatico" -ForegroundColor Cyan
 & "$dir\instalar-vm.ps1"
 Start-ScheduledTask -TaskName "API Analises"
 
 Write-Host ""
-Write-Host "Pronto! A API esta subindo em background (aguarde ~15s)." -ForegroundColor Green
+Write-Host "Pronto! O MySQL esta no Docker e a API esta subindo via PM2 (aguarde ~15s)." -ForegroundColor Green
 Write-Host "Se algo falhar, rode em primeiro plano para ver os logs:  .\start.ps1" -ForegroundColor Yellow

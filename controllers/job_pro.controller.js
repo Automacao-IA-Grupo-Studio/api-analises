@@ -1,7 +1,7 @@
 const { spawn }  = require('child_process');
 const path        = require('path');
 const fs          = require('fs');
-const { getDB }   = require('../db/connection');
+const { getPool } = require('../db/connection');
 
 const DATA_DIR    = path.join(baseDir(), 'data', 'jobs');
 const PYTHON_BIN   = process.env.PYTHON_BIN || caminhoAnalisadorPadrao();
@@ -32,8 +32,8 @@ function usaScriptPy() {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.listarJobs = async (req, res) => {
   try {
-    const db = getDB();
-    const rows = db.prepare(`
+    const pool = getPool();
+    const [rows] = await pool.query(`
       SELECT
         id, num_job, pasta_raiz, status_analise,
         contrato_existe, procuracao_existe, honorarios, gross_up, passivo,
@@ -44,7 +44,7 @@ exports.listarJobs = async (req, res) => {
         analisado_em, created_at
       FROM jobs_pro
       ORDER BY analisado_em DESC
-    `).all();
+    `);
     res.json({ total: rows.length, jobs: rows });
   } catch (err) {
     console.error('[listarJobs]', err);
@@ -57,8 +57,9 @@ exports.listarJobs = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.obterJob = async (req, res) => {
   try {
-    const db  = getDB();
-    const row = db.prepare('SELECT * FROM jobs_pro WHERE id = ?').get(req.params.id);
+    const pool = getPool();
+    const [rows] = await pool.query('SELECT * FROM jobs_pro WHERE id = ?', [req.params.id]);
+    const row = rows[0];
     if (!row) {
       return res.status(404).json({ error: 'Job não encontrado' });
     }
@@ -173,54 +174,10 @@ exports.analisarJob = async (req, res) => {
       return c?.alerta ? 1 : 0;
     };
 
-    // ── Insere (ou atualiza) no SQLite ──────────────────────────────────────
+    // ── Insere (ou atualiza) no MySQL ───────────────────────────────────────
     try {
-      const db = getDB();
-      const stmt = db.prepare(`
-        INSERT INTO jobs_pro (
-          num_job, pasta_raiz,
-          contrato_existe, procuracao_existe, honorarios, gross_up, passivo,
-          data_abertura, simples_nacional, socios,
-          situacao_fiscal, regularize, perfil,
-          faturamento, fastpass, supply, finap,
-          alerta_sem_contrato, alerta_sem_procuracao, alerta_baixo_fat, alerta_regularize,
-          raw_resultado, status_analise, analisado_em
-        ) VALUES (
-          @num_job, @pasta_raiz,
-          @contrato_existe, @procuracao_existe, @honorarios, @gross_up, @passivo,
-          @data_abertura, @simples_nacional, @socios,
-          @situacao_fiscal, @regularize, @perfil,
-          @faturamento, @fastpass, @supply, @finap,
-          @alerta_sem_contrato, @alerta_sem_procuracao, @alerta_baixo_fat, @alerta_regularize,
-          @raw_resultado, 'ok', strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')
-        )
-        ON CONFLICT(num_job) DO UPDATE SET
-          pasta_raiz        = excluded.pasta_raiz,
-          contrato_existe    = excluded.contrato_existe,
-          procuracao_existe  = excluded.procuracao_existe,
-          honorarios         = excluded.honorarios,
-          gross_up           = excluded.gross_up,
-          passivo            = excluded.passivo,
-          data_abertura      = excluded.data_abertura,
-          simples_nacional   = excluded.simples_nacional,
-          socios             = excluded.socios,
-          situacao_fiscal    = excluded.situacao_fiscal,
-          regularize         = excluded.regularize,
-          perfil             = excluded.perfil,
-          faturamento        = excluded.faturamento,
-          fastpass           = excluded.fastpass,
-          supply             = excluded.supply,
-          finap              = excluded.finap,
-          alerta_sem_contrato   = excluded.alerta_sem_contrato,
-          alerta_sem_procuracao = excluded.alerta_sem_procuracao,
-          alerta_baixo_fat      = excluded.alerta_baixo_fat,
-          alerta_regularize     = excluded.alerta_regularize,
-          raw_resultado      = excluded.raw_resultado,
-          status_analise     = 'ok',
-          analisado_em       = strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')
-      `);
-
-      stmt.run({
+      const pool = getPool();
+      const valores = {
         num_job, pasta_raiz,
         contrato_existe:   campo('contrato_existe'),
         procuracao_existe: campo('procuracao_existe'),
@@ -242,9 +199,56 @@ exports.analisarJob = async (req, res) => {
         alerta_baixo_fat:      alertaAtivo('FATURAMENTO MÉDIO ABAIXO DE R$ 20M'),
         alerta_regularize:     alertaAtivo('COM REGULARIZE'),
         raw_resultado: JSON.stringify(analise),
-      });
+      };
 
-      const row = db.prepare('SELECT * FROM jobs_pro WHERE num_job = ?').get(num_job);
+      await pool.query(
+        `INSERT INTO jobs_pro (
+          num_job, pasta_raiz,
+          contrato_existe, procuracao_existe, honorarios, gross_up, passivo,
+          data_abertura, simples_nacional, socios,
+          situacao_fiscal, regularize, perfil,
+          faturamento, fastpass, supply, finap,
+          alerta_sem_contrato, alerta_sem_procuracao, alerta_baixo_fat, alerta_regularize,
+          raw_resultado, status_analise, analisado_em
+        ) VALUES (
+          :num_job, :pasta_raiz,
+          :contrato_existe, :procuracao_existe, :honorarios, :gross_up, :passivo,
+          :data_abertura, :simples_nacional, :socios,
+          :situacao_fiscal, :regularize, :perfil,
+          :faturamento, :fastpass, :supply, :finap,
+          :alerta_sem_contrato, :alerta_sem_procuracao, :alerta_baixo_fat, :alerta_regularize,
+          :raw_resultado, 'ok', NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+          pasta_raiz        = VALUES(pasta_raiz),
+          contrato_existe    = VALUES(contrato_existe),
+          procuracao_existe  = VALUES(procuracao_existe),
+          honorarios         = VALUES(honorarios),
+          gross_up           = VALUES(gross_up),
+          passivo            = VALUES(passivo),
+          data_abertura      = VALUES(data_abertura),
+          simples_nacional   = VALUES(simples_nacional),
+          socios             = VALUES(socios),
+          situacao_fiscal    = VALUES(situacao_fiscal),
+          regularize         = VALUES(regularize),
+          perfil             = VALUES(perfil),
+          faturamento        = VALUES(faturamento),
+          fastpass           = VALUES(fastpass),
+          supply             = VALUES(supply),
+          finap              = VALUES(finap),
+          alerta_sem_contrato   = VALUES(alerta_sem_contrato),
+          alerta_sem_procuracao = VALUES(alerta_sem_procuracao),
+          alerta_baixo_fat      = VALUES(alerta_baixo_fat),
+          alerta_regularize     = VALUES(alerta_regularize),
+          raw_resultado      = VALUES(raw_resultado),
+          status_analise     = 'ok',
+          analisado_em       = NOW()
+        `,
+        valores
+      );
+
+      const [rows] = await pool.query('SELECT * FROM jobs_pro WHERE num_job = ?', [num_job]);
+      const row = rows[0];
       console.log(`[analisar] Salvo no banco — id: ${row?.id}`);
 
       res.status(201).json({

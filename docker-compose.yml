@@ -1,22 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Sobe SOMENTE o MySQL em Docker.
+#
+# A API (Node) NÃO roda em container — ela roda direto na VM via PM2
+# (veja ecosystem.config.js). Isso é proposital: rodando fora do Docker a
+# API acessa normalmente os compartilhamentos de rede (\\studiofiscal\...)
+# com as credenciais do usuário logado, o que dava problema quando a API
+# também estava dentro de um container.
+#
+# Uso:
+#   docker compose up -d        # sobe o MySQL em background
+#   docker compose logs -f      # acompanha os logs
+#   docker compose down         # para (os dados continuam no volume)
+# ─────────────────────────────────────────────────────────────────────────────
 services:
 
-  # ── API Node.js + Python (banco SQLite embutido, sem serviço externo) ───────
-  api:
-    build: .
-    container_name: api-analises
-    ports:
-      - "3030:3030"
-    environment:
-      - PORT=3030
-      - PYTHON_BIN=python3
-      # PATH_BASE: caminho base montado abaixo
-      - PATH_BASE=/mnt/temporarios
-    volumes:
-      # ── Share de rede montado no host ───────────────────────────────────────
-      # Windows (Docker Desktop): configure no host com net use e exponha assim:
-      #   //studiofiscal/Temporarios:/mnt/temporarios:ro
-      # Ajuste o caminho do lado esquerdo conforme o mapeamento da sua máquina:
-      - ${SHARE_PATH:-./dados-exemplo}:/mnt/temporarios:ro
-      # Persiste o banco SQLite e os JSONs sidecar
-      - ./data:/app/data
+  mysql:
+    image: mysql:8.0
+    container_name: api-analises-mysql
     restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=${DB_NAME:-api_analises}
+      - MYSQL_USER=${DB_USER:-api_analises}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-api_analises}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-troque_esta_senha}
+    ports:
+      # Publicada no host para a API (rodando fora do Docker, via PM2) conectar
+      # em 127.0.0.1:3306. Ajuste a porta do lado esquerdo se 3306 já estiver
+      # em uso na VM.
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-troque_esta_senha}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql-data:

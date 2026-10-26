@@ -1,20 +1,20 @@
 # Rodar UMA vez na VM, em PowerShell como Administrador:
-#   .\instalar-vm.ps1              (MySQL no Docker)
-#   .\instalar-vm.ps1 -SemDocker   (MySQL instalado no Windows)
+#   .\instalar-vm.ps1
 #Requires -RunAsAdministrator
-param([switch]$SemDocker)
 $PORT = 3030
 $dir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# 1. Libera a porta no firewall do Windows
+# 1. Libera a porta da API no firewall do Windows (o MySQL, no Docker, fica
+#    só em 127.0.0.1 — não precisa de regra, nada de fora acessa ele direto)
 Remove-NetFirewallRule -DisplayName "API Analises" -ErrorAction SilentlyContinue
 New-NetFirewallRule -DisplayName "API Analises" -Direction Inbound -Protocol TCP `
     -LocalPort $PORT -Action Allow -Profile Any | Out-Null
 Write-Host "Firewall: porta $PORT liberada" -ForegroundColor Green
 
-# 2. Sobe a API sozinha quando este usuario fizer logon (acessa o \\studiofiscal com as credenciais dele)
+# 2. Sobe o MySQL (Docker) + a API (via PM2) sozinhos quando este usuario
+#    fizer logon (acessa o \\studiofiscal com as credenciais dele)
 $acao = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $dir `
-    -Argument ("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dir\start.ps1`"" + $(if ($SemDocker) { " -SemDocker" } else { "" }))
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dir\start.ps1`""
 $gatilho = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 Register-ScheduledTask -TaskName "API Analises" -Action $acao -Trigger $gatilho `
     -User "$env:USERDOMAIN\$env:USERNAME" -RunLevel Highest -Force | Out-Null
