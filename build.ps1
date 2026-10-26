@@ -44,10 +44,10 @@ Write-Host ""
 
 # -- 1. Node: instala deps e empacota server.exe ------------------------------
 Write-Host "[1/5] Empacotando servidor Node (server.exe)..." -ForegroundColor Cyan
-if (-not (Test-Path "$root\node_modules")) {
-    npm install
-    if ($LASTEXITCODE -ne 0) { throw "npm install falhou." }
-}
+# Sempre roda (idempotente): garante que novas dependencias (ex.: pkg) sejam
+# instaladas mesmo se node_modules ja existir de uma versao anterior do projeto.
+npm install
+if ($LASTEXITCODE -ne 0) { throw "npm install falhou." }
 npm run build:server
 if ($LASTEXITCODE -ne 0) { throw "Build do server.exe falhou." }
 Write-Host "  ok: dist\build\server.exe" -ForegroundColor Green
