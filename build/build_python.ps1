@@ -1,16 +1,18 @@
 # =============================================================================
-#  build_python.ps1 — Empacota services/analisar_job.py num .exe standalone
+#  build_python.ps1 - Empacota services/analisar_job.py num .exe standalone
 # =============================================================================
 #  Usa PyInstaller para gerar analisar_job.exe: roda em qualquer Windows,
-#  sem precisar de Python instalado na máquina de destino.
+#  sem precisar de Python instalado na maquina de destino.
 #
-#  PRECISA rodar numa máquina Windows com Python instalado (PyInstaller não
-#  faz cross-compile: um .exe Windows só pode ser gerado rodando no Windows).
+#  PRECISA rodar numa maquina Windows com Python instalado (PyInstaller nao
+#  faz cross-compile: um .exe Windows so pode ser gerado rodando no Windows).
 #
 #  Uso (PowerShell, dentro da pasta do projeto):
 #    .\build\build_python.ps1
 #
-#  Saída: dist\build\analisar_job.exe
+#  Saida: dist\build\analisar_job.exe
+#
+#  Texto sem acentos de proposito (evita erro de encoding no PowerShell).
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -71,7 +73,9 @@ New-Item -ItemType Directory -Path "$root\dist\build" -Force | Out-Null
 Copy-Item "$buildDist\analisar_job.exe" "$root\dist\build\analisar_job.exe" -Force
 
 # ---- 6. Smoke test ---------------------------------------------------------
-Write-Host "`nTeste rapido (sem pasta real -> espera erro amigavel em JSON):" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Teste rapido (sem pasta real -> espera erro amigavel em JSON):" -ForegroundColor Cyan
 & "$root\dist\build\analisar_job.exe" "C:\pasta-que-nao-existe"
 
-Write-Host "`nOK: dist\build\analisar_job.exe gerado com sucesso." -ForegroundColor Green
+Write-Host ""
+Write-Host "OK: dist\build\analisar_job.exe gerado com sucesso." -ForegroundColor Green
