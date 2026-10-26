@@ -6,13 +6,13 @@ um script Python por trás (extração de PDF/XLSX/OCR).
 
 Dois jeitos totalmente diferentes de usar o projeto — veja qual é o seu caso:
 
-| | Modo API (VM) | Modo Desktop (build) |
+| | Modo API (VM) | Modo Desktop (app com GUI) |
 |---|---|---|
 | Para quem | Time todo, multiusuário, histórico centralizado | Uma pessoa, análise avulsa, sem servidor |
 | Onde roda | Numa VM, sempre ligada | No PC de qualquer usuário |
-| Banco de dados | MySQL (em Docker) | Nenhum |
-| Resultado | Fica salvo no banco + JSON em `data/jobs/`, consultado pelo frontend/API | Um `.txt` com o JSON bruto, na pasta onde o app rodou |
-| Como sobe | `init_vm.txt` (uma vez) + PM2 | `.\build.ps1` gera um `.exe` portátil |
+| Banco de dados | MySQL (em Docker) | Arquivo local (`data/jobs.json`), um por máquina |
+| Resultado | Fica salvo no banco + JSON em `data/jobs/`, consultado pelo frontend/API | Mostrado numa janela gráfica (mesmo dashboard do Modo API), histórico só nessa máquina |
+| Como sobe | `init_vm.txt` (uma vez) + PM2 | `.\build.ps1` gera um pacote (pasta) portátil com app Electron |
 
 ## Modo 1 — API na VM (produção, multiusuário)
 
@@ -60,10 +60,14 @@ na rede).
 
 ## Modo 2 — App Desktop (uso individual, sem servidor)
 
-Sem API, sem banco de dados. O usuário roda o `.exe`, informa o caminho da
-pasta de rede a analisar (ex.: `\\studiofiscal\Temporarios\001`), e o
-resultado (**JSON bruto**, igual ao que o analisador devolve) é salvo num
-`.txt` na própria pasta onde o app foi executado.
+Sem API remota, sem MySQL. É um app desktop de verdade (Electron), com uma
+janela gráfica — **igual ao dashboard do Modo API** — onde o usuário
+informa o número do job e o caminho da pasta de rede (ex.:
+`\\studiofiscal\Temporarios\001`), acompanha a lista de jobs já analisados
+e abre o detalhe de cada um. Por baixo dos panos, o app sobe um servidor
+local (só essa máquina acessa) e guarda o histórico num arquivo JSON local
+(`data\jobs.json`, ao lado do executável) — cada máquina/usuário tem o seu
+próprio, sem depender de rede ou de outro servidor.
 
 **Gerar o pacote** (numa máquina de build Windows, com Node.js e Python
 instalados — a própria VM preparada pelo `init_vm.txt` serve, Docker não é
@@ -75,29 +79,38 @@ necessário para isso):
 
 Isso gera `dist\AnaliseDesktop\` com:
 
-- `desktop.exe` — o app desktop empacotado (via `pkg`)
+- `AnaliseDesktop.exe` + DLLs/recursos do Electron — a janela gráfica do app
 - `analisar_job.exe` — o analisador Python empacotado (via `PyInstaller`)
 - `tesseract\` — OCR portátil, sem instalador
-- `iniciar.bat` — dê dois cliques, informe a pasta, pronto
 - `LEIA-ME.txt` — instruções para quem só vai *usar* o pacote
 
 **Copie a pasta `dist\AnaliseDesktop\` inteira** (ou o
-`dist\AnaliseDesktop.zip`) para a máquina de destino. Nada mais precisa
-estar instalado lá.
+`dist\AnaliseDesktop.zip`) para a máquina de destino, e dê dois cliques em
+`AnaliseDesktop.exe`. Nada mais precisa estar instalado lá — mas note que
+é um app de **pasta**, não um `.exe` único e solto: Electron sempre vem
+com um conjunto de DLLs/recursos ao lado do executável principal, então
+não dá pra copiar só o `.exe`.
 
 > Detalhe técnico: o `build.ps1` precisa rodar no Windows porque o
 > PyInstaller não compila cruzado (um `.exe` Windows só sai rodando em
-> Windows). O build do `desktop.exe` (lado Node) já roda tanto em Windows
-> quanto em Linux/Mac, já que usa cross-compile do `pkg`.
+> Windows). O empacotamento do Electron (`electron-packager`) também
+> poderia cross-compilar de Linux/Mac, mas como o `build.ps1` já roda tudo
+> numa única passada no Windows, mantemos os dois passos juntos ali.
 
-**Rodar sem empacotar (dev):** `npm run desktop` (ou `node desktop.js`),
-com Python e as deps de `requirements.txt` instaladas.
+**Rodar sem empacotar (dev):** dentro de `desktop-gui/`, `npm install` e
+depois `npm start` (abre a janela Electron apontando pro Express local em
+modo dev), com Python e as deps de `requirements.txt` instaladas.
 
 ## Estrutura
 
 ```
-server.js                    servidor Express (Modo API)
-desktop.js                   app desktop, sem API/banco (Modo Desktop)
+server.js                          servidor Express (Modo API)
+desktop-gui/                       app desktop com GUI (Electron) — Modo Desktop
+desktop-gui/main.js                 processo principal do Electron (sobe o Express local)
+desktop-gui/server/app.js           fábrica do Express local (rotas + frontend)
+desktop-gui/server/controller.js    lógica das rotas + chama o analisador
+desktop-gui/server/jobStore.js      "banco" local em data/jobs.json (JSON, upsert por num_job)
+desktop-gui/frontend/index.html     UI (cópia do frontend/index.html, mesmo visual)
 routes/api.routes.js          rotas HTTP
 controllers/job_pro.controller.js   lógica das rotas + chama o analisador
 db/connection.js              conexão MySQL (mysql2) — usada só no Modo API

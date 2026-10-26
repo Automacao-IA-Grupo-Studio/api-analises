@@ -1,6 +1,6 @@
 {
   "name": "api-analises",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "API de análise de documentos — Studio Fiscal",
   "main": "server.js",
   "scripts": {
@@ -10,15 +10,7 @@
     "pm2:restart": "pm2 restart ecosystem.config.js",
     "pm2:stop": "pm2 stop ecosystem.config.js",
     "pm2:logs": "pm2 logs api-analises",
-    "desktop": "node desktop.js",
-    "build:desktop": "pkg desktop.js --targets node18-win-x64 --output dist/build/desktop.exe",
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1"
-  },
-  "bin": "desktop.js",
-  "pkg": {
-    "assets": [
-      "services/**/*"
-    ]
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -28,7 +20,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.2",
-    "pm2": "^5.4.2",
-    "@yao-pkg/pkg": "^5.14.0"
+    "pm2": "^5.4.2"
   }
 }

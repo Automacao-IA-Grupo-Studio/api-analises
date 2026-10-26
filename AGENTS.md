@@ -66,29 +66,49 @@ PM2 → node server.js (porta 3030, fora do Docker)
 - Frontend estático em `frontend/index.html`, servido pelo próprio Express
   em `/` — consome `/api/jobs`, `/api/jobs/:id`, `/api/jobs/analisar`.
 
-### Modo Desktop (build) — `desktop.js`
+### Modo Desktop (GUI, Electron) — `desktop-gui/`
 
-Pensado para um usuário rodar sozinho, sem depender de servidor nenhum.
+Pensado para um usuário rodar sozinho, sem depender de servidor nenhum,
+numa **janela gráfica** com a mesma cara do dashboard do Modo API.
 
 ```
-desktop.exe → pergunta o caminho da pasta (ex.: \\studiofiscal\Temporarios\001)
-            → spawn analisar_job.py/.exe (mesma lógica de detecção do controller)
-            → grava o JSON bruto retornado num .txt na pasta onde foi executado
+AnaliseDesktop.exe (Electron)
+  └─ main.js sobe um Express LOCAL (loopback 127.0.0.1, porta escolhida
+     pelo SO — nunca acessível de fora da máquina) e abre uma BrowserWindow
+     carregando esse servidor
+        └─ server/app.js     → monta as rotas + serve frontend/index.html
+        └─ server/controller.js → spawn analisar_job.py/.exe (mesma lógica
+           de detecção do Modo API: usa .exe empacotado se existir ao lado,
+           senão cai pra python3 services/analisar_job.py)
+        └─ server/jobStore.js → "banco" local em JSON (data/jobs.json, ao
+           lado do executável), com upsert por num_job e escrita atômica
+           (grava em .tmp e faz rename, pra nunca corromper o arquivo)
 ```
 
-- `desktop.js` é um script de linha de comando (readline), sem Express, sem
-  banco, sem rede HTTP. Para cada rodada: pergunta o caminho da pasta e um
-  "número do job" opcional (só usado para nomear o arquivo de saída), roda
-  o analisador, e grava a resposta **JSON bruta** (sem reformatar) em
-  `<num_job_ou_analise>_<timestamp>.txt` dentro de `process.cwd()` — ou
-  seja, a pasta onde o `.exe`/`iniciar.bat` foi executado.
-- Detecta `analisar_job.exe` do mesmo jeito que o controller (se existir ao
-  lado do executável, usa ele; senão cai pra `python3
-  services/analisar_job.py`).
-- `build.ps1` empacota `desktop.exe` (via `pkg`, script `build:desktop` do
-  `package.json`) + `analisar_job.exe` (via PyInstaller, `build/build_python.ps1`)
-  + Tesseract portátil num pacote `dist\AnaliseDesktop\`, sem precisar de
-  Node/Python/Tesseract instalados na máquina de destino.
+- `desktop-gui/frontend/index.html` é uma cópia literal de
+  `frontend/index.html` (mesmo HTML/CSS/JS do Modo API) — é assim que a
+  GUI desktop fica visualmente idêntica ao dashboard web. Qualquer mudança
+  visual pedida "pros dois modos" precisa ser replicada nos dois arquivos
+  (não há compartilhamento de template entre eles hoje).
+- Cada instalação tem seu **próprio histórico local** — não há
+  sincronização entre máquinas nem com o MySQL do Modo API. Isso é
+  intencional: o usuário autorizou explicitamente um "banco" simples em
+  arquivo (ver histórico de decisão) em vez de embutir um banco real
+  (SQLite) dentro do Electron, para evitar o risco de módulos nativos
+  (`better-sqlite3`) compilados pro ABI errado do Electron.
+- `desktop-gui/package.json` tem `build:win` (`@electron/packager`, não o
+  pacote `electron-packager` antigo/deprecado — mesmo binário de CLI,
+  então os scripts não mudam) que gera
+  `dist/build/AnaliseDesktop-win32-x64/AnaliseDesktop.exe` + DLLs.
+- `build.ps1` (raiz) orquestra tudo: empacota o Electron (`desktop-gui`),
+  empacota `analisar_job.exe` (via PyInstaller, `build/build_python.ps1`),
+  baixa/prepara o Tesseract portátil, e monta tudo em
+  `dist/AnaliseDesktop/` (uma PASTA — Electron não gera um único `.exe`
+  portátil, gera um `.exe` principal + DLLs/recursos ao redor; copiar só o
+  `.exe` sem o resto da pasta NÃO funciona).
+- Não existe mais `desktop.js` (CLI por terminal) — foi removido e
+  substituído por esta GUI Electron, a pedido do usuário ("eu quero uma
+  GUI bonitinha, igual essa do print só que para desktop").
 
 ### Por que isso importa para uma IA editando o código
 
@@ -97,10 +117,15 @@ desktop.exe → pergunta o caminho da pasta (ex.: \\studiofiscal\Temporarios\001
   Não precisa duplicar lógica.
 - Uma mudança em `controllers/job_pro.controller.js` ou no schema do MySQL
   **só afeta o Modo API** — o Modo Desktop nem importa esses arquivos.
-- Uma mudança em `desktop.js` **só afeta o Modo Desktop**.
+- Uma mudança em `desktop-gui/server/controller.js` ou `jobStore.js` **só
+  afeta o Modo Desktop**.
+- Uma mudança visual no dashboard pedida de forma genérica ("muda a cor do
+  topbar") provavelmente precisa ser replicada em `frontend/index.html`
+  (Modo API) **e** `desktop-gui/frontend/index.html` (Modo Desktop) — pare
+  e pergunte/confirme qual(is) modo(s) é(são) o alvo antes de editar só um.
 - Se pedirem "salvar em outro lugar" ou "mudar o formato de saída", pergunte
   (ou confira pelo contexto) qual dos dois modos é o alvo — API grava no
-  MySQL + JSON sidecar, Desktop grava só o `.txt`.
+  MySQL + JSON sidecar, Desktop grava em `data/jobs.json` local.
 
 ## Fluxo de dados ponta a ponta (Modo API)
 
@@ -118,24 +143,32 @@ desktop.exe → pergunta o caminho da pasta (ex.: \\studiofiscal\Temporarios\001
 5. Frontend consulta `GET /api/jobs` (lista) e `GET /api/jobs/:id` (detalhe,
    inclui `raw_resultado` — o JSON completo salvo como texto).
 
-No Modo Desktop os passos 1–3 são os mesmos (trocando o HTTP request por um
-prompt no terminal), mas o passo 4 vira "grava o JSON cru num `.txt`" — sem
-parsear campo a campo, sem banco.
+No Modo Desktop os passos 1–3 são os mesmos (a GUI Electron faz o mesmo
+`POST /api/jobs/analisar` contra o próprio servidor Express local, em vez
+de um servidor remoto), mas o passo 4 vira "faz upsert em `data/jobs.json`
+local, por `num_job`, com `raw_resultado` guardado como objeto (não
+string)" — sem MySQL, sem rede.
 
 ## Convenções e pontos de atenção
 
 - **Texto sem acentuação nos `.ps1`** é proposital (evita erro de encoding
   no PowerShell de VMs Windows). Não "corrija" para incluir acentos.
-- `baseDir()`/`caminhoAnalisadorPadrao()`/`usaScriptPy()` aparecem duplicados
-  (com a mesma lógica) em `controllers/job_pro.controller.js` e em
-  `desktop.js`, porque cada um resolve o caminho em relação ao **seu
-  próprio** executável quando empacotado. Isso é intencional — não vale a
-  pena abstrair para um módulo compartilhado sem avaliar como fica o
-  empacotamento com `pkg` (ambos pontos de entrada ficam empacotados como
-  `.exe` separados).
+- `caminhoAnalisadorPadrao()`/`usaScriptPy()` aparecem duplicados (com a
+  mesma lógica) em `controllers/job_pro.controller.js` e em
+  `desktop-gui/server/controller.js`, porque cada um resolve o caminho do
+  `analisar_job.exe` em relação ao **seu próprio** `baseDir`. Isso é
+  intencional — não vale a pena abstrair para um módulo compartilhado sem
+  avaliar como fica o empacotamento (um é `pkg`, o outro é
+  `electron-packager`, com convenções de pasta diferentes).
 - `process.pkg` é a forma de detectar "estou rodando empacotado (`pkg`) ou
-  via `node arquivo.js`". Use essa checagem para resolver caminhos que
-  mudam entre dev/empacotado.
+  via `node arquivo.js`" — só vale para o Modo API, se algum dia ele for
+  empacotado assim. **Não use `process.pkg` dentro de `desktop-gui/`**:
+  Electron não usa `pkg`, a checagem correta lá é `app.isPackaged` (ver
+  `desktop-gui/main.js`), que já resolve o `baseDir` certo e injeta via
+  `createApp({ baseDir, ... })`/`createController({ baseDir, ... })` —
+  essas duas funções são fábricas justamente para receber esse `baseDir`
+  de fora e ficarem testáveis com Node puro, sem precisar do Electron de
+  verdade rodando.
 - O schema (`migrations/001_init.sql`) é **MySQL**, não SQLite — usa
   `AUTO_INCREMENT`, `ON UPDATE CURRENT_TIMESTAMP`, `UNIQUE KEY`, etc.
   `db/connection.js` roda esse arquivo inteiro contra o MySQL na
@@ -154,7 +187,12 @@ parsear campo a campo, sem banco.
 
 ```
 server.js                           Modo API — bootstrap do Express
-desktop.js                          Modo Desktop — CLI interativa, sem API/banco
+desktop-gui/main.js                 Modo Desktop — processo principal do Electron
+desktop-gui/server/app.js           Modo Desktop — fábrica do Express local
+desktop-gui/server/controller.js    Modo Desktop — orquestra spawn + jobStore
+desktop-gui/server/jobStore.js      Modo Desktop — "banco" local em data/jobs.json
+desktop-gui/frontend/index.html     Modo Desktop — UI (cópia do frontend/index.html)
+desktop-gui/package.json            Modo Desktop — deps + build:win (electron-packager)
 routes/api.routes.js                Modo API — rotas HTTP
 controllers/job_pro.controller.js   Modo API — orquestra spawn + MySQL
 db/connection.js                    Modo API — pool mysql2/promise
@@ -167,7 +205,7 @@ ecosystem.config.js                 Modo API — config do PM2
 .env.example                        Modo API — variáveis de conexão MySQL + PORT
 init_vm.txt                         Modo API — setup inicial da VM
 instalar-vm.ps1 / start.ps1         Modo API — firewall, tarefa agendada, start
-build.ps1                           Modo Desktop — empacota desktop.exe + analisar_job.exe
+build.ps1                           Modo Desktop — empacota Electron + analisar_job.exe + Tesseract
 build/build_python.ps1              Os DOIS modos — empacota só o analisador Python
 requirements.txt                    Os DOIS modos — deps Python do analisador
 ```
@@ -177,7 +215,11 @@ requirements.txt                    Os DOIS modos — deps Python do analisador
 - A mudança é uma **regra de negócio da análise** (o que extrair, de onde,
   quais limiares)? → mexe em `services/analisar_job.py`, afeta os dois modos.
 - É sobre **como o resultado é entregue/guardado**? → identifique o modo
-  (API → `controller`/MySQL; Desktop → `desktop.js`/`.txt`) antes de editar.
+  (API → `controller`/MySQL; Desktop → `desktop-gui/server/controller.js`/
+  `data/jobs.json`) antes de editar.
 - É sobre **infraestrutura/deploy**? → confirme se é VM (Docker+PM2) ou
-  pacote desktop (`pkg`+PyInstaller) — as duas trilhas de build
+  pacote desktop (Electron+PyInstaller) — as duas trilhas de build
   (`build.ps1` vs `init_vm.txt`) não se misturam.
+- É uma **mudança visual** (cor, layout, texto da tela)? → ela normalmente
+  precisa ir em `frontend/index.html` E `desktop-gui/frontend/index.html`
+  juntos, pra não deixar os dois modos com dashboards diferentes.

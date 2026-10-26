@@ -5,16 +5,17 @@
 #
 #  Produz dist\AnaliseDesktop\ - uma pasta portatil que roda em QUALQUER
 #  Windows, sem precisar instalar Node, Python ou Tesseract:
-#    - desktop.exe        (app desktop empacotado com pkg)
+#    - AnaliseDesktop.exe + DLLs do Electron  (janela grafica do app)
 #    - analisar_job.exe   (Python + libs de extracao, empacotado)
 #    - tesseract\         (OCR portatil, sem instalador)
-#    - iniciar.bat        (launcher: abre um console e roda o fluxo)
 #    - LEIA-ME.txt
 #
-#  Este pacote NAO sobe API nem usa banco de dados: cada analise pergunta o
-#  caminho da pasta, roda o analisador e grava o resultado (JSON bruto) num
-#  .txt na pasta onde foi executado. Para o modo API (producao, multiusuario,
-#  MySQL), veja init_vm.txt / docker-compose.yml / ecosystem.config.js.
+#  Este pacote NAO sobe API nem usa banco de dados externo: cada analise
+#  grava o resultado num arquivo local (data\jobs.json, dentro da propria
+#  pasta do app) e mostra tudo numa janela grafica (mesmo visual do Modo
+#  API). Cada maquina/usuario tem seu proprio historico, local, sem rede.
+#  Para o modo API (producao, multiusuario, MySQL), veja init_vm.txt /
+#  docker-compose.yml / ecosystem.config.js.
 #
 #  Uso (PowerShell, dentro da pasta do projeto):
 #    .\build.ps1
@@ -28,8 +29,9 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 Set-Location $root
 
-$distBuild = "$root\dist\build"
-$pkgDir    = "$root\dist\AnaliseDesktop"
+$distBuild   = "$root\dist\build"
+$electronOut = "$distBuild\AnaliseDesktop-win32-x64"
+$pkgDir      = "$root\dist\AnaliseDesktop"
 
 Write-Host ""
 Write-Host "=== Build - Analise Desktop (pacote autocontido) ===" -ForegroundColor Cyan
@@ -46,13 +48,16 @@ if (-not $pythonOk) { throw "Python 3 nao encontrado. Rode init_vm.txt primeiro.
 Write-Host "  ok" -ForegroundColor Green
 Write-Host ""
 
-# -- 1. Node: instala deps e empacota desktop.exe ------------------------------
-Write-Host "[1/5] Empacotando app desktop (desktop.exe)..." -ForegroundColor Cyan
+# -- 1. App desktop (Electron): instala deps e empacota pra win32-x64 --------
+Write-Host "[1/5] Empacotando app desktop (Electron)..." -ForegroundColor Cyan
+Push-Location "$root\desktop-gui"
 npm install
-if ($LASTEXITCODE -ne 0) { throw "npm install falhou." }
-npm run build:desktop
-if ($LASTEXITCODE -ne 0) { throw "Build do desktop.exe falhou." }
-Write-Host "  ok: dist\build\desktop.exe" -ForegroundColor Green
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install (desktop-gui) falhou." }
+npm run build:win
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Build do AnaliseDesktop.exe falhou." }
+Pop-Location
+if (-not (Test-Path "$electronOut\AnaliseDesktop.exe")) { throw "electron-packager nao gerou AnaliseDesktop.exe em $electronOut" }
+Write-Host "  ok: $electronOut\AnaliseDesktop.exe" -ForegroundColor Green
 Write-Host ""
 
 # -- 2. Python: empacota analisar_job.exe -------------------------------------
@@ -89,21 +94,13 @@ Write-Host ""
 # -- 4. Monta a pasta final distribuivel ---------------------------------------
 Write-Host "[4/5] Montando pacote final (dist\AnaliseDesktop\)..." -ForegroundColor Cyan
 Remove-Item -Recurse -Force $pkgDir -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
 
-Copy-Item "$distBuild\desktop.exe"      "$pkgDir\desktop.exe"      -Force
+# Copia a pasta inteira que o electron-packager gerou (AnaliseDesktop.exe +
+# todas as DLLs/recursos do Electron) como base do pacote final.
+Copy-Item $electronOut $pkgDir -Recurse -Force
+
 Copy-Item "$distBuild\analisar_job.exe" "$pkgDir\analisar_job.exe" -Force
 Copy-Item "$distBuild\tesseract"        "$pkgDir\tesseract"        -Recurse -Force
-
-@"
-@echo off
-title Analise Desktop - Studio Fiscal
-cd /d "%~dp0"
-set TESSERACT_CMD=%~dp0tesseract\tesseract.exe
-set TESSDATA_PREFIX=%~dp0tesseract\tessdata
-desktop.exe
-pause
-"@ | Set-Content -Path "$pkgDir\iniciar.bat" -Encoding ASCII
 
 @"
 Analise Desktop - Studio Fiscal (pacote autocontido)
@@ -111,18 +108,21 @@ Analise Desktop - Studio Fiscal (pacote autocontido)
 
 Como usar:
   1. Copie esta pasta inteira para a maquina de destino (qualquer Windows).
-  2. De dois cliques em "iniciar.bat".
-  3. Informe o caminho da pasta de rede a analisar quando pedido
-     (ex.: \\studiofiscal\Temporarios\001).
-  4. O resultado (JSON bruto) e salvo num arquivo .txt NESTA MESMA PASTA,
-     ao lado do iniciar.bat.
+  2. De dois cliques em "AnaliseDesktop.exe".
+  3. Uma janela abre com o mesmo painel do Modo API: formulario para
+     analisar um job (numero + caminho da pasta de rede) e a lista dos
+     jobs ja analisados NESTA maquina.
 
-Nada mais precisa estar instalado: Node, Python e Tesseract ja estao todos
-dentro desta pasta. Este pacote nao usa banco de dados e nao sobe nenhuma
-API - cada analise fica soh no .txt gerado.
+Nada mais precisa estar instalado: Node, Python, Tesseract e os dados
+(arquivo local) ja estao todos dentro desta pasta.
 
-Para enviar os resultados pro sistema central (API + MySQL na VM), use o
-modo API em vez deste pacote - veja o README do projeto.
+Os resultados ficam em data\jobs.json, dentro desta mesma pasta - cada
+maquina/usuario tem seu proprio historico, local, sem depender de rede ou
+servidor. Faca backup dessa pasta "data" periodicamente.
+
+Para enviar os resultados pro sistema central (API + MySQL na VM, com
+historico compartilhado por todo o time), use o Modo API em vez deste
+pacote - veja o README do projeto.
 "@ | Set-Content -Path "$pkgDir\LEIA-ME.txt" -Encoding UTF8
 
 Write-Host "  ok" -ForegroundColor Green
