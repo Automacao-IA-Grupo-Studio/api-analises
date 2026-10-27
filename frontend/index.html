@@ -412,6 +412,8 @@
       font-weight: 600;
       white-space: nowrap;
     }
+    .badge-found { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd }
+    .result-badge { display:flex; flex-direction:column; gap:6px; align-items:flex-end }
     .badge-ok    { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd) }
     .badge-err   { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-bd) }
     .badge-warn  { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd) }
@@ -842,11 +844,11 @@ function renderJobs(jobs) {
     const sfVal = j.regularize || '';
     const sfTitle = esc(sfVal);
     const sfBadge = sfVal.toUpperCase().startsWith('SIM')
-      ? `<span class="badge badge-err" title="${sfTitle}">Perfil</span>`
+      ? `<span class="badge badge-ok" title="${sfTitle}">É perfil</span>`
       : sfVal.toLowerCase().startsWith('sem cadastro')
       ? `<span class="badge badge-warn" title="${sfTitle}">Sem cadastro</span>`
       : sfVal.toLowerCase().startsWith('n')
-      ? `<span class="badge badge-ok" title="${sfTitle}">Não</span>`
+      ? `<span class="badge badge-err" title="${sfTitle}">Não é perfil</span>`
       : `<span style="color:var(--fg-3);font-size:11px">—</span>`;
 
     const alertsHtml = alertas.length
@@ -1060,17 +1062,30 @@ function renderModalBody(job) {
       <div class="cat-label">${cat}</div>
       ${fields.map(f => {
         const val = job[f];
-        const isAlert = f === 'regularize' && val && val.toUpperCase().startsWith('SIM');
+        const res = resultadoDe(f);
         const pendente = f === 'procuracao_existe' && !val;
-        const rowClass = isAlert ? 'alert' : pendente ? 'ok' : val ? 'ok' : 'miss';
-        const icon = isAlert ? '⚠' : pendente ? '…' : val ? '✔' : '✕';
-
-        // Determina tipo da badge
-        let badgeHtml = '';
-        if (isAlert)      badgeHtml = `<span class="badge badge-err">Alerta</span>`;
-        else if (pendente) badgeHtml = `<span class="badge badge-warn">Via Project</span>`;
-        else if (val)     badgeHtml = `<span class="badge badge-ok">Encontrado</span>`;
-        else              badgeHtml = `<span class="badge badge-err">Não encontrado</span>`;
+        const perfis = ['socios','regularize','perfil','fastpass','supply','finap'];
+        const isPerfil = perfis.includes(f);
+        const texto = String(val || '').trim().toLowerCase();
+        const media = res?.dados?.faturamento?.media;
+        const encontrado = ['fastpass','supply','finap'].includes(f)
+          ? (res ? typeof media === 'number' : !!val && !texto.startsWith('inconclusivo'))
+          : (res ? res.status === 'ok' : !!val);
+        const rowClass = encontrado ? 'ok' : 'miss';
+        const icon = encontrado ? '•' : '…';
+        let badgeHtml = pendente
+          ? '<span class="badge badge-warn">Via Project</span>'
+          : `<span class="badge ${encontrado ? 'badge-found' : 'badge-warn'}">${encontrado ? 'Encontrado' : 'Não encontrado'}</span>`;
+        if (isPerfil && encontrado) {
+          let perfil = null;
+          if (f === 'regularize' && typeof res?.dados?.dentro === 'boolean') perfil = res.dados.dentro;
+          else if (f === 'perfil' && typeof res?.dados?.eh_perfil === 'boolean') perfil = res.dados.eh_perfil;
+          else if (f !== 'socios') {
+            if (/^(sim|é perfil)/.test(texto)) perfil = true;
+            else if (/^(não|nao|sem cadastro)/.test(texto)) perfil = false;
+          }
+          badgeHtml += `<span class="badge ${perfil === true ? 'badge-ok' : perfil === false ? 'badge-err' : 'badge-warn'}">${perfil === true ? 'É perfil' : perfil === false ? 'Não é perfil' : 'Inconclusivo'}</span>`;
+        }
 
         const valHtml = val
           ? `<div class="result-val">${esc(val).replace(/\n/g, '<br>')}</div>`

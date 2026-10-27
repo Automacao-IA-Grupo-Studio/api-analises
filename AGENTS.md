@@ -274,3 +274,5 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - Perfil Finap - Lei do Bem: média dos anos fechados > R$ 50 milhões E CNAE principal na lista explícita de 296 CNAEs da planilha cnae Finep (2).xlsx. Igualdade não qualifica. Sem CNAE: verificar. A lista CNAES_FINAP em services/analisar_job.py é a fonte editável e acompanha o executável, sem dependência da planilha em produção. Alterações exigem novo build do analisador empacotado.
 - Detalhes mostram dados extraídos; evidências mostram caminhos de origem, trechos e valores. Ausência de dado não significa negativa. A maioria dos campos usa o primeiro documento reconhecido; não há escolha automática pelo mais recente. OCR pode falhar e requer conferência.
 - Checklist: sem contrato e com Perfil Transação. Fastpass inconclusivo não gera reprovação de faturamento baixo.
+
+- Tags do relatório: azul = encontrado; laranja = não encontrado. Classificação separada: verde = é perfil; vermelho = não é perfil; laranja = inconclusivo. Encontrar sócios não comprova Perfil Family; sem critério de classificação definido, fica inconclusivo.
