@@ -96,10 +96,13 @@ AnaliseDesktop.exe (Electron)
   arquivo (ver histórico de decisão) em vez de embutir um banco real
   (SQLite) dentro do Electron, para evitar o risco de módulos nativos
   (`better-sqlite3`) compilados pro ABI errado do Electron.
-- `desktop-gui/package.json` tem `build:win` (`@electron/packager`, não o
-  pacote `electron-packager` antigo/deprecado — mesmo binário de CLI,
-  então os scripts não mudam) que gera
-  `dist/build/AnaliseDesktop-win32-x64/AnaliseDesktop.exe` + DLLs.
+- `desktop-gui/package.json` tem `build:win` = `node build-win.js`, que baixa
+  o zip do Electron via `@electron/get`, extrai com o `tar` do Windows,
+  renomeia `electron.exe` para `AnaliseDesktop.exe` e monta `resources/app`
+  (gera `dist/build/AnaliseDesktop-win32-x64/AnaliseDesktop.exe` + DLLs).
+  **Nao use `electron-packager` nem o postinstall do `electron`**: ambos
+  extraem com `extract-zip`, que trava em silencio no Node 26 (extrai 1
+  arquivo, a promise nunca resolve, exit 0, nenhum .exe gerado).
 - `build.ps1` (raiz) orquestra tudo: empacota o Electron (`desktop-gui`),
   empacota `analisar_job.exe` (via PyInstaller, `build/build_python.ps1`),
   baixa/prepara o Tesseract portátil, e monta tudo em

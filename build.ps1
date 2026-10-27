@@ -54,42 +54,10 @@ Push-Location "$root\desktop-gui"
 npm install
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install (desktop-gui) falhou." }
 
-# O binario real do Electron (electron.exe, que o electron-packager usa
-# como base do AnaliseDesktop.exe) e baixado pelo script de postinstall do
-# pacote "electron" (node_modules\electron\install.js). Duas coisas podem
-# impedir esse download sem dar erro nenhum:
-#   1) uma politica de seguranca de scripts do npm bloqueando o postinstall
-#      (aviso "npm warn allow-scripts ... electron@x (postinstall: node
-#      install.js)") - o npm install "funciona" mas o binario nunca baixa;
-#   2) a variavel de ambiente ELECTRON_SKIP_BINARY_DOWNLOAD definida em
-#      QUALQUER nivel (sistema, usuario, ou setada por antivirus/VPN/npm
-#      antigo) - o proprio install.js do pacote "electron" sai na hora, sem
-#      imprimir nada e com codigo 0, se essa variavel estiver definida.
-# Em qualquer um dos dois casos o electron-packager roda sem erro, porem
-# NAO gera nenhum .exe (nao ha binario do Electron pra empacotar). Por
-# isso forcamos o download aqui, de forma idempotente e limpando essa
-# variavel so para este comando (nao mexe no resto do sistema).
-$electronDistExe = "$root\desktop-gui\node_modules\electron\dist\electron.exe"
-if (-not (Test-Path $electronDistExe)) {
-    Write-Host "  Binario do Electron nao encontrado - baixando manualmente..." -ForegroundColor Yellow
-
-    $skipVar = [Environment]::GetEnvironmentVariable("ELECTRON_SKIP_BINARY_DOWNLOAD")
-    if ($skipVar) {
-        Write-Host "  (variavel de ambiente ELECTRON_SKIP_BINARY_DOWNLOAD='$skipVar' estava" -ForegroundColor Yellow
-        Write-Host "  bloqueando o download - ignorando so para este comando)" -ForegroundColor Yellow
-    }
-    $env:ELECTRON_SKIP_BINARY_DOWNLOAD = ""
-
-    node "$root\desktop-gui\node_modules\electron\install.js"
-    $exitInstall = $LASTEXITCODE
-    if ($exitInstall -ne 0) { Pop-Location; throw "Download do binario do Electron falhou (node_modules\electron\install.js, exit $exitInstall)." }
-    if (-not (Test-Path $electronDistExe)) {
-        Pop-Location
-        throw "node_modules\electron\install.js terminou com exit 0 mas nao gerou $electronDistExe. Verifique conexao com a internet/proxy (o download e feito do GitHub) e rode de novo."
-    }
-    Write-Host "  ok: binario do Electron baixado" -ForegroundColor Green
-}
-
+# O empacotamento usa desktop-gui\build-win.js (baixa o zip do Electron via
+# @electron/get e extrai com o tar do Windows). NAO usamos electron-packager
+# nem o postinstall do electron: ambos dependem do extract-zip, que trava em
+# silencio no Node 26 (extrai 1 arquivo e sai com exit 0, sem gerar o .exe).
 npm run build:win
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Build do AnaliseDesktop.exe falhou." }
 Pop-Location
