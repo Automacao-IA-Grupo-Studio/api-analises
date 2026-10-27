@@ -7,6 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const jobStore = require('./jobStore');
+const logger = require('./logger');
 const { createController } = require('./controller');
 
 /**
@@ -25,7 +26,26 @@ function createApp({ baseDir, pyScriptPath, dbFile, frontendDir }) {
   app.use(cors());
   app.use(express.json());
 
+  // Registra toda chamada de API que deu erro (4xx/5xx). O polling da tela de
+  // logs fica de fora pra não poluir.
+  app.use('/api', (req, res, next) => {
+    res.on('finish', () => {
+      if (res.statusCode >= 400 && !req.originalUrl.startsWith('/api/logs')) {
+        logger.aviso(`[http] ${req.method} ${req.originalUrl} -> ${res.statusCode}`);
+      }
+    });
+    next();
+  });
+
   app.get('/health', (req, res) => res.json({ status: 'ok', db: 'ok' }));
+
+  // Tela de logs (frontend/logs.html): lista incremental + limpar tela.
+  app.get('/api/logs', (req, res) => res.json({
+    ...logger.listar(parseInt(req.query.desde, 10) || 0),
+    arquivo: logger.caminhoArquivo(),
+  }));
+  app.post('/api/logs/limpar', (req, res) => { logger.limparTela(); res.json({ ok: true }); });
+
 
   app.get('/api/jobs', controller.listarJobs);
   app.get('/api/jobs/:id', controller.obterJob);

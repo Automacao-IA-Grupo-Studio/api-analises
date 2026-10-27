@@ -10,6 +10,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const jobStore = require('./jobStore');
+const logger = require('./logger');
 
 /**
  * @param {object} opts
@@ -33,6 +34,9 @@ function createController({ baseDir, pyScriptPath }) {
   const PYTHON_BIN = process.env.PYTHON_BIN || caminhoAnalisadorPadrao();
   const SCRIPT_ARGS_PREFIX = usaScriptPy() ? [pyScriptPath] : [];
 
+  logger.info(`Analisador: ${PYTHON_BIN}${SCRIPT_ARGS_PREFIX.length ? ' ' + SCRIPT_ARGS_PREFIX.join(' ') : ''} ` +
+              `(${usaScriptPy() ? 'script .py' : 'analisar_job.exe empacotado'}) | baseDir=${baseDir}`);
+
   // ───────────────────────────────────────────────────────────────────────
   //  GET /api/jobs
   // ───────────────────────────────────────────────────────────────────────
@@ -41,7 +45,7 @@ function createController({ baseDir, pyScriptPath }) {
       const jobs = jobStore.listar();
       res.json({ total: jobs.length, jobs });
     } catch (err) {
-      console.error('[listarJobs]', err);
+      logger.erro('[listarJobs]', err);
       res.status(500).json({ error: err.message });
     }
   }
@@ -55,7 +59,7 @@ function createController({ baseDir, pyScriptPath }) {
       if (!job) return res.status(404).json({ error: 'Job não encontrado' });
       res.json(job);
     } catch (err) {
-      console.error('[obterJob]', err);
+      logger.erro('[obterJob]', err);
       res.status(500).json({ error: err.message });
     }
   }
@@ -70,32 +74,44 @@ function createController({ baseDir, pyScriptPath }) {
       return res.status(400).json({ error: 'Campos obrigatórios: pasta_raiz, num_job' });
     }
 
-    console.log(`\n[analisar] Iniciando: ${num_job} — ${pasta_raiz}`);
+    logger.info(`[analisar] Iniciando: job="${num_job}" pasta="${pasta_raiz}"`);
 
     const python = spawn(PYTHON_BIN, [...SCRIPT_ARGS_PREFIX, pasta_raiz], {
-      env: { ...process.env, PYTHONUTF8: '1' },
+      env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
       windowsHide: true,
     });
+
+    let respondido = false;
+    const responder = (status, corpo) => {
+      if (respondido) return;
+      respondido = true;
+      res.status(status).json(corpo);
+    };
 
     let stdout = '';
     let stderr = '';
 
-    python.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); });
+    // setEncoding usa um decoder que não corta caractere multibyte no meio
+    // quando o texto chega dividido em vários pedaços.
+    python.stdout.setEncoding('utf8');
+    python.stderr.setEncoding('utf8');
+    python.stdout.on('data', chunk => { stdout += chunk; });
     python.stderr.on('data', chunk => {
-      const line = chunk.toString('utf8');
-      stderr += line;
-      process.stdout.write(`[analisador] ${line}`);
+      stderr += chunk;
+      chunk.split(/\r?\n/).filter(l => l.trim()).forEach(l => logger.info(`[analisador] ${l}`));
     });
 
     python.on('error', err => {
-      console.error('[spawn] Erro ao iniciar analisador:', err.message);
-      return res.status(500).json({
+      logger.erro(`[spawn] Não foi possível iniciar o analisador (${PYTHON_BIN}): ${err.message}`);
+      responder(500, {
         error: 'Não foi possível iniciar o analisador de documentos',
         detalhes: err.message,
       });
     });
 
     python.on('close', code => {
+      logger.info(`[analisar] Analisador terminou: exit=${code} | stdout=${stdout.length} chars | stderr=${stderr.length} chars`);
+      if (respondido) return;
       let analise;
       try {
         const jsonStart = stdout.indexOf('{');
@@ -103,25 +119,28 @@ function createController({ baseDir, pyScriptPath }) {
         analise = JSON.parse(stdout.slice(jsonStart));
       } catch (e) {
         if (code !== 0) {
-          console.error(`[analisar] Analisador saiu com código ${code}`);
-          return res.status(500).json({
+          logger.erro(`[analisar] Falhou (exit ${code}) e a saída não é JSON.\n--- stderr (final) ---\n${stderr.slice(-2000)}\n--- stdout (final) ---\n${stdout.slice(-1000)}`);
+          return responder(500, {
             error: `Análise falhou (exit ${code})`,
             detalhes: stderr.slice(-1000) || stdout.slice(-1000),
           });
         }
-        console.error('[analisar] JSON inválido:', stdout.slice(0, 500));
-        return res.status(500).json({
+        logger.erro(`[analisar] Saída do analisador não é JSON válido: ${stdout.slice(0, 500)}`);
+        return responder(500, {
           error: 'Resposta do analisador não é JSON válido',
           raw: stdout.slice(0, 500),
         });
       }
 
       if (analise.erro) {
-        return res.status(422).json({ error: analise.erro });
+        // O traceback do Python não vai pra tela do usuário, mas fica no log.
+        logger.erro(`[analisar] Analisador devolveu erro para "${num_job}": ${analise.erro}` +
+                    (analise.traceback ? `\n--- traceback do Python ---\n${analise.traceback}` : ''));
+        return responder(422, { error: analise.erro });
       }
       if (code !== 0) {
-        console.error(`[analisar] Analisador saiu com código ${code}`);
-        return res.status(500).json({
+        logger.erro(`[analisar] Falhou (exit ${code}).\n--- stderr (final) ---\n${stderr.slice(-2000)}`);
+        return responder(500, {
           error: `Análise falhou (exit ${code})`,
           detalhes: stderr.slice(-1000),
         });
@@ -164,11 +183,12 @@ function createController({ baseDir, pyScriptPath }) {
           raw_resultado: analise, // objeto, não string — o frontend espera isso
         });
 
-        console.log(`[analisar] Salvo — id: ${job.id}`);
-        res.status(201).json({ mensagem: 'Análise concluída e salva com sucesso', job });
+        logger.info(`[analisar] Concluído e salvo: job="${num_job}" id=${job.id} ` +
+                    `(${analise.resumo?.encontrados ?? '?'}/${analise.resumo?.total ?? '?'} itens encontrados)`);
+        responder(201, { mensagem: 'Análise concluída e salva com sucesso', job });
       } catch (dbErr) {
-        console.error('[analisar] Erro ao salvar:', dbErr.message);
-        res.status(207).json({
+        logger.erro('[analisar] Erro ao salvar o resultado:', dbErr);
+        responder(207, {
           mensagem: 'Análise concluída, mas não foi possível salvar',
           erro_banco: dbErr.message,
           analise,

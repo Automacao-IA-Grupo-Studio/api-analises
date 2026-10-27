@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logs — Análise Desktop</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #111c33; --fg: #e2e8f0; --fg-3: #94a3b8; --line: #1e2b47;
+    --info: #94a3b8; --aviso: #fbbf24; --erro: #f87171; --acc: #3b82f6;
+  }
+  * { box-sizing: border-box }
+  html, body { height: 100%; margin: 0 }
+  body { background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, "Segoe UI", sans-serif; display: flex; flex-direction: column }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line) }
+  header h1 { font-size: 14px; margin: 0 8px 0 0 }
+  button, select, input[type=search] { background: #0b1326; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit }
+  button { cursor: pointer } button:hover { border-color: var(--acc) }
+  input[type=search] { min-width: 180px }
+  label { color: var(--fg-3); display: inline-flex; align-items: center; gap: 5px }
+  .sp { flex: 1 }
+  #status { color: var(--fg-3); font-size: 12px }
+  #log { flex: 1; overflow: auto; padding: 8px 14px 14px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-word; user-select: text }
+  .l { padding: 1px 0 }
+  .l .t { color: #64748b } .l.INFO .n { color: var(--info) } .l.AVISO .n { color: var(--aviso) } .l.ERRO .n { color: var(--erro) }
+  .l.ERRO .m { color: #fecaca } .l.AVISO .m { color: #fde68a }
+  .vazio { color: var(--fg-3); padding: 20px 0 }
+  footer { padding: 6px 14px; background: var(--panel); border-top: 1px solid var(--line); color: var(--fg-3); font-size: 11px; user-select: text }
+</style>
+</head>
+<body>
+<header>
+  <h1>Logs do app</h1>
+  <label>Nível
+    <select id="nivel">
+      <option value="TODOS">Todos</option>
+      <option value="AVISO">Avisos + erros</option>
+      <option value="ERRO">Só erros</option>
+    </select>
+  </label>
+  <input id="busca" type="search" placeholder="Filtrar texto…">
+  <label><input id="auto" type="checkbox" checked> Rolar até o fim</label>
+  <span class="sp"></span>
+  <span id="status"></span>
+  <button id="copiar">Copiar tudo</button>
+  <button id="limpar">Limpar tela</button>
+</header>
+<div id="log"></div>
+<footer id="arquivo"></footer>
+
+<script>
+const logEl = document.getElementById('log');
+const todas = [];            // tudo que já veio do servidor
+let ultimoId = 0;
+
+const pad = n => String(n).padStart(2, '0');
+function hora(iso) {
+  const d = new Date(iso);
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function esc(v) { return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+function passaFiltro(l) {
+  const nivel = document.getElementById('nivel').value;
+  if (nivel === 'ERRO' && l.nivel !== 'ERRO') return false;
+  if (nivel === 'AVISO' && l.nivel === 'INFO') return false;
+  const q = document.getElementById('busca').value.trim().toLowerCase();
+  return !q || l.msg.toLowerCase().includes(q);
+}
+
+function desenhar() {
+  const vis = todas.filter(passaFiltro);
+  logEl.innerHTML = vis.length
+    ? vis.map(l => `<div class="l ${l.nivel}"><span class="t">${hora(l.ts)}</span> <span class="n">[${l.nivel}]</span> <span class="m">${esc(l.msg)}</span></div>`).join('')
+    : '<div class="vazio">Nenhuma linha de log para este filtro.</div>';
+  if (document.getElementById('auto').checked) logEl.scrollTop = logEl.scrollHeight;
+  document.getElementById('status').textContent = `${vis.length} de ${todas.length} linhas`;
+}
+
+async function buscar() {
+  try {
+    const r = await fetch(`/api/logs?desde=${ultimoId}`);
+    const d = await r.json();
+    if (d.linhas.length) { todas.push(...d.linhas); ultimoId = d.ultimo_id; desenhar(); }
+    document.getElementById('arquivo').textContent = d.arquivo ? `Arquivo de log: ${d.arquivo}` : 'Log só em memória (sem arquivo).';
+  } catch { /* servidor local fora do ar: tenta de novo no próximo ciclo */ }
+}
+
+document.getElementById('nivel').addEventListener('change', desenhar);
+document.getElementById('busca').addEventListener('input', desenhar);
+document.getElementById('limpar').addEventListener('click', async () => {
+  await fetch('/api/logs/limpar', { method: 'POST' });
+  todas.length = 0; desenhar();
+});
+document.getElementById('copiar').addEventListener('click', async () => {
+  const txt = todas.filter(passaFiltro).map(l => `${l.ts} [${l.nivel}] ${l.msg}`).join('\n');
+  try { await navigator.clipboard.writeText(txt); }
+  catch { // fallback: seleciona o texto pra Ctrl+C
+    const rg = document.createRange(); rg.selectNodeContents(logEl);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  }
+  const b = document.getElementById('copiar'); b.textContent = 'Copiado!'; setTimeout(() => b.textContent = 'Copiar tudo', 1200);
+});
+
+buscar(); setInterval(buscar, 1500);
+</script>
+</body>
+</html>

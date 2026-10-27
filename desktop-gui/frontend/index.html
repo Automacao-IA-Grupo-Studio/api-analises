@@ -535,7 +535,7 @@
     }
     .result-row {
       display: grid;
-      grid-template-columns: 24px 1fr auto;
+      grid-template-columns: 24px minmax(0, 1fr) auto;
       gap: 8px 10px;
       align-items: start;
       padding: 8px 10px;
@@ -556,6 +556,7 @@
       font-family: var(--mono);
     }
     .result-badge { align-self: center }
+    .raw-block.doc-json-block { white-space: pre-wrap; word-break: break-word; margin-top: 6px }
 
     /* ── Raw JSON viewer ───────────────────────────────────────────────────── */
     .raw-toggle {
@@ -978,6 +979,15 @@ async function abrirJob(id) {
 
     body.innerHTML = renderModalBody(job);
 
+    // Toggle do JSON de cada documento (ex.: Regularize)
+    body.querySelectorAll('.doc-json-toggle').forEach(tog => {
+      tog.addEventListener('click', () => {
+        const bloco = tog.nextElementSibling;
+        bloco.hidden = !bloco.hidden;
+        tog.textContent = bloco.hidden ? '▸ Ver JSON do documento' : '▾ Ocultar JSON do documento';
+      });
+    });
+
     // Toggle raw JSON
     document.getElementById('rawToggle')?.addEventListener('click', () => {
       const raw = document.getElementById('rawBlock');
@@ -991,6 +1001,11 @@ async function abrirJob(id) {
 }
 
 function renderModalBody(job) {
+  // raw_resultado pode vir como objeto (Desktop) ou string JSON (Modo API/MySQL)
+  let rawObj = job.raw_resultado;
+  if (typeof rawObj === 'string') { try { rawObj = JSON.parse(rawObj); } catch { rawObj = null; } }
+  const resultadoDe = id => (rawObj?.resultados || []).find(r => r.id === id);
+
   // Checklist
   const alertas = [
     [job.alerta_sem_contrato,   'SEM CONTRATO'],
@@ -1060,11 +1075,21 @@ function renderModalBody(job) {
           ? `<div class="result-val">${esc(val).replace(/\n/g, '<br>')}</div>`
           : `<div class="result-val" style="color:var(--fg-3);font-style:italic">${pendente ? 'Em branco — definido pelo Project' : '—'}</div>`;
 
+        // JSON do documento (o que foi extraído do arquivo) — aberto por padrão
+        let docJsonHtml = '';
+        const resDoc = f === 'regularize' ? resultadoDe(f) : null;
+        if (resDoc) {
+          docJsonHtml = `
+            <div class="raw-toggle doc-json-toggle">▾ Ocultar JSON do documento</div>
+            <div class="raw-block doc-json-block">${esc(JSON.stringify(resDoc, null, 2))}</div>`;
+        }
+
         return `<div class="result-row ${rowClass}">
           <div class="result-icon">${icon}</div>
           <div>
             <div class="result-field">${LABELS[f] || f}</div>
             ${valHtml}
+            ${docJsonHtml}
           </div>
           <div class="result-badge">${badgeHtml}</div>
         </div>`;
@@ -1075,7 +1100,7 @@ function renderModalBody(job) {
   const rawHtml = `
     <div id="rawToggle" class="raw-toggle">▸ Ver JSON bruto</div>
     <div id="rawBlock" class="raw-block" hidden>${
-      JSON.stringify(job.raw_resultado || {}, null, 2).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      JSON.stringify(rawObj || {}, null, 2).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     }</div>`;
 
   return chkHtml + catsHtml + rawHtml;

@@ -5,7 +5,7 @@
   "private": true,
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node tools/preparar-dev.js && electron .",
     "build:win": "node build-win.js"
   },
   "dependencies": {

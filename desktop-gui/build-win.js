@@ -12,42 +12,21 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { raiz, versaoElectron, baixarZip, extrairZip } = require('./tools/electron-zip');
 
-const raiz = __dirname;
 const saida = path.resolve(raiz, '..', 'dist', 'build', 'AnaliseDesktop-win32-x64');
-const versao = require('electron/package.json').version;
 
 function rodar(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32', ...opts });
   if (r.status !== 0) throw new Error(`Falhou (exit ${r.status}): ${cmd} ${args.join(' ')}`);
 }
 
-function extrairZip(zip, destino) {
-  if (process.platform === 'win32') {
-    // Caminho completo: evita pegar um tar de GNU (ex.: do Git) que nao abre .zip
-    const tarWin = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
-    rodar(`"${tarWin}"`, ['-xf', `"${zip}"`, '-C', `"${destino}"`]);
-  }
-  else rodar('unzip', ['-q', zip, '-d', destino]);
-}
-
 async function main() {
-  // @electron/get vem como dependencia do pacote "electron" e pode ficar
-  // aninhado dentro dele, entao resolvemos a partir da pasta do electron.
-  const dirElectron = path.dirname(require.resolve('electron/package.json'));
-  const { downloadArtifact } = require(require.resolve('@electron/get', { paths: [dirElectron, raiz] }));
-  console.log(`Baixando Electron v${versao} (win32-x64)...`);
-  const zip = await downloadArtifact({
-    version: versao,
-    artifactName: 'electron',
-    platform: 'win32',
-    arch: 'x64',
-    checksums: require('electron/checksums.json'),
-  });
+  console.log(`Baixando Electron v${versaoElectron()} (win32-x64)...`);
+  const zip = await baixarZip('win32', 'x64');
   console.log('Zip:', zip);
 
   fs.rmSync(saida, { recursive: true, force: true });
-  fs.mkdirSync(saida, { recursive: true });
   console.log('Extraindo...');
   extrairZip(zip, saida);
 

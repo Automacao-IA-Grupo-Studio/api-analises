@@ -121,6 +121,9 @@ Como usar:
 Nada mais precisa estar instalado: Node, Python, Tesseract e os dados
 (arquivo local) ja estao todos dentro desta pasta.
 
+Se algo der errado: dentro do app, aperte Ctrl+Shift+L (ou Alt -> Ferramentas
+-> Ver logs) para ver os erros. O log tambem fica em data\logs\app.log.
+
 Os resultados ficam em data\jobs.json, dentro desta mesma pasta - cada
 maquina/usuario tem seu proprio historico, local, sem depender de rede ou
 servidor. Faca backup dessa pasta "data" periodicamente.

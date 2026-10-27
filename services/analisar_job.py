@@ -16,6 +16,18 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# ── Saída sempre em UTF-8 ─────────────────────────────────────────────────────
+# No Windows, stdout/stderr redirecionados (pipe) usam a codepage ANSI (cp1252)
+# e quebram em caracteres como "≥" ("'charmap' codec can't encode character").
+# O .exe do PyInstaller IGNORA PYTHONUTF8/PYTHONIOENCODING, então não dá pra
+# depender de variável de ambiente: reconfigura aqui, antes de qualquer print.
+for _fluxo in (sys.stdout, sys.stderr):
+    try:
+        if _fluxo is not None:
+            _fluxo.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ── Importações com tratamento de erro claro ──────────────────────────────────
 try:
     import pdfplumber
@@ -31,10 +43,10 @@ LIMIAR_FASTPASS = 20_000_000
 LIMIAR_SUPPLY   = 30_000_000
 LIMIAR_FINAP    = 50_000_000          # + CNAE principal precisa ser indústria
 
-# Regularize: dívida total (PGFN + RFB) precisa estar ACIMA do limiar da classe
-REGULARIZE_LIMIAR_AB     = 600_000    # classificação A ou B
-REGULARIZE_LIMIAR_CD     = 300_000    # classificação C ou D
-REGULARIZE_LIMIAR_OUTROS = 1_000_000  # sem classificação / omisso
+# Regularize: olha SÓ o documento de capacidade de pagamento (PGFN). Se a dívida
+# total (PGFN + RFB) estiver ACIMA deste valor, está DENTRO; senão, FORA.
+# A classificação (A/B/C/D/omisso) NÃO entra mais na regra (só é exibida).
+REGULARIZE_LIMIAR = 600_000
 
 PASTA_CNPJ = ["B - Documentos", "5 - Cliente", "16 - CNPJ"]
 
@@ -690,15 +702,6 @@ def _proc_qsa(raiz, elem, ctx):
 
 
 # ── Regularize ───────────────────────────────────────────────────────────────
-def _limiar_regularize(classe: str) -> int:
-    c = (classe or "").strip().upper()[:1]
-    if c in ("A", "B"):
-        return REGULARIZE_LIMIAR_AB
-    if c in ("C", "D"):
-        return REGULARIZE_LIMIAR_CD
-    return REGULARIZE_LIMIAR_OUTROS
-
-
 def _proc_regularize(raiz, elem, ctx):
     # 1) Consulta de capacidade de pagamento (PGFN)
     for arq in candidatos(raiz, elem):
@@ -716,16 +719,22 @@ def _proc_regularize(raiz, elem, ctx):
         m_cont = re.search(r"Valor\s+em\s+contencioso[^:\n]*:\s*R\$\s*(" + _NUM + ")", texto, re.IGNORECASE)
         contencioso = _brl(m_cont.group(1)) if m_cont else None
 
-        limiar = _limiar_regularize(classe)
-        eh = divida > limiar
+        limiar = REGULARIZE_LIMIAR
+        eh = divida > limiar                      # acima de R$ 600 mil = dentro
         classe_txt = classe.upper() if classe[:1].upper() in "ABCD" and len(classe) == 1 else (classe or "sem classificação")
-        valor = (f"{'SIM' if eh else 'Não'} — classificação {classe_txt} | dívida PGFN+RFB {_fmt_brl(divida)} "
-                 f"({'acima' if eh else 'abaixo'} do limiar de {_fmt_brl(limiar)})")
+        valor = (f"{'SIM' if eh else 'Não'} — {'dentro' if eh else 'fora'} do Regularize | "
+                 f"dívida PGFN+RFB {_fmt_brl(divida)} "
+                 f"({'acima' if eh else 'não acima'} de {_fmt_brl(limiar)})")
         if contencioso:
             valor += f" | contencioso RFB {_fmt_brl(contencioso)} (não somado)"
         return _r(valor, _trecho(texto, m_div.start(), m_div.end()), [arq], status="ok",
-                  dados={"classificacao": classe_txt, "divida_total": divida,
-                         "contencioso": contencioso, "limiar": limiar, "perfil_regularize": eh})
+                  dados={"regra": f"dívida PGFN+RFB > {limiar}",
+                         "dentro": eh,
+                         "divida_total": divida,
+                         "limiar": limiar,
+                         "contencioso": contencioso,
+                         "classificacao_documento": classe_txt,   # informativo, não entra na regra
+                         "perfil_regularize": eh})
 
     # 2) Arquivo (normalmente .txt) avisando que NÃO há cadastro no Regularize
     for caminho in _varrer_pasta(raiz, ["B - Documentos", "2 - Fiscal"], set()):

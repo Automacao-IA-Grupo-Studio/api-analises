@@ -17,7 +17,7 @@ um checklist de alertas (sem contrato, faturamento baixo, com Regularize...).
 
 O **core de negócio é 100% o script Python** (`services/analisar_job.py`) —
 é ele que sabe onde procurar cada documento, como extrair cada dado e quais
-são os limiares (R$ 20M/30M/50M, classes do Regularize etc.). Tudo o mais
+são os limiares (R$ 20M/30M/50M; Regularize = dívida PGFN+RFB acima de R$ 600 mil etc.). Tudo o mais
 no repo (Node, banco, build) é só **transporte e persistência** do que esse
 script já decidiu. Se a tarefa for "mudar uma regra de negócio" (ex.: outro
 limiar, outra pasta-alvo, outro padrão de nome de arquivo), o lugar certo é
@@ -86,7 +86,7 @@ AnaliseDesktop.exe (Electron)
 ```
 
 - `desktop-gui/frontend/index.html` é uma cópia literal de
-  `frontend/index.html` (mesmo HTML/CSS/JS do Modo API) — é assim que a
+  `frontend/index.html` (mesmo HTML/CSS/JS do Modo API; confira com `diff`) — é assim que a
   GUI desktop fica visualmente idêntica ao dashboard web. Qualquer mudança
   visual pedida "pros dois modos" precisa ser replicada nos dois arquivos
   (não há compartilhamento de template entre eles hoje).
@@ -109,6 +109,19 @@ AnaliseDesktop.exe (Electron)
   `dist/AnaliseDesktop/` (uma PASTA — Electron não gera um único `.exe`
   portátil, gera um `.exe` principal + DLLs/recursos ao redor; copiar só o
   `.exe` sem o resto da pasta NÃO funciona).
+- **Logs (só Modo Desktop)**: `server/logger.js` (singleton) guarda as últimas
+  3000 linhas em memória e grava em `data/logs/app.log` ao lado do `.exe`
+  (rotaciona em 2 MB). O `controller.js` loga cada análise, cada linha de
+  stderr do analisador e — importante — o **traceback do Python**, que não vai
+  pra tela do usuário. `app.js` expõe `GET /api/logs?desde=<id>` e
+  `POST /api/logs/limpar`, e `frontend/logs.html` (só existe no Desktop) é a
+  tela. Fica "escondida": **Ctrl+Shift+L** ou tecla **Alt → Ferramentas → Ver
+  logs** (menu montado em `main.js`; a janela de logs é única). `main.js` também
+  encaminha pro log: exceções do processo principal, `console.error` da tela e
+  falhas de carga. Só escreve em `data/logs` — nunca nas pastas analisadas.
+- `desktop-gui/tools/`: `electron-zip.js` (baixa o zip via `@electron/get` e
+  extrai com `tar`/`unzip`) e `preparar-dev.js` (roda no `npm start` e garante
+  `node_modules/electron/dist`, já que o instalador padrão falha no Node 26).
 - Não existe mais `desktop.js` (CLI por terminal) — foi removido e
   substituído por esta GUI Electron, a pedido do usuário ("eu quero uma
   GUI bonitinha, igual essa do print só que para desktop").
@@ -154,6 +167,18 @@ string)" — sem MySQL, sem rede.
 
 ## Convenções e pontos de atenção
 
+- **Encoding da saída do analisador**: `analisar_job.py` faz
+  `sys.stdout/stderr.reconfigure(encoding="utf-8")` logo no início. Não troque
+  isso por variável de ambiente: o `.exe` do PyInstaller **ignora**
+  `PYTHONUTF8`/`PYTHONIOENCODING`, e no Windows o pipe cai em cp1252, o que
+  gerava `'charmap' codec can't encode character '\u2265'` (o "≥" de
+  "Fastpass (≥ R$ 20M)" sai em toda análise).
+- **Regra do Regularize** (`_proc_regularize`): só olha o documento de
+  capacidade de pagamento (PGFN). Dívida PGFN+RFB **> R$ 600.000** = dentro
+  ("SIM — dentro do Regularize"); senão fora ("Não — fora ..."). A classificação
+  A/B/C/D **não entra na regra** (só aparece em `dados.classificacao_documento`).
+  O detalhe do job mostra o JSON do documento (`resultados[id=regularize]`).
+
 - **Texto sem acentuação nos `.ps1`** é proposital (evita erro de encoding
   no PowerShell de VMs Windows). Não "corrija" para incluir acentos.
 - `caminhoAnalisadorPadrao()`/`usaScriptPy()` aparecem duplicados (com a
@@ -194,8 +219,12 @@ desktop-gui/main.js                 Modo Desktop — processo principal do Elect
 desktop-gui/server/app.js           Modo Desktop — fábrica do Express local
 desktop-gui/server/controller.js    Modo Desktop — orquestra spawn + jobStore
 desktop-gui/server/jobStore.js      Modo Desktop — "banco" local em data/jobs.json
+desktop-gui/server/logger.js        Modo Desktop — log em memória + data/logs/app.log
 desktop-gui/frontend/index.html     Modo Desktop — UI (cópia do frontend/index.html)
-desktop-gui/package.json            Modo Desktop — deps + build:win (electron-packager)
+desktop-gui/frontend/logs.html      Modo Desktop — tela de logs (Ctrl+Shift+L)
+desktop-gui/build-win.js            Modo Desktop — gera AnaliseDesktop.exe (sem electron-packager)
+desktop-gui/tools/                  Modo Desktop — baixa/extrai o Electron (npm start e build)
+desktop-gui/package.json            Modo Desktop — deps + scripts start / build:win
 routes/api.routes.js                Modo API — rotas HTTP
 controllers/job_pro.controller.js   Modo API — orquestra spawn + MySQL
 db/connection.js                    Modo API — pool mysql2/promise

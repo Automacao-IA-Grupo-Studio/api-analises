@@ -97,9 +97,23 @@ não dá pra copiar só o `.exe`.
 > poderia cross-compilar de Linux/Mac, mas como o `build.ps1` já roda tudo
 > numa única passada no Windows, mantemos os dois passos juntos ali.
 
-**Rodar sem empacotar (dev):** dentro de `desktop-gui/`, `npm install` e
-depois `npm start` (abre a janela Electron apontando pro Express local em
-modo dev), com Python e as deps de `requirements.txt` instaladas.
+**Rodar sem empacotar (dev):** precisa de Python com as deps de
+`requirements.txt` (`pip install -r requirements.txt`) e Node.js.
+
+```powershell
+cd desktop-gui
+npm install
+npm start
+```
+
+**Logs / erros:** dentro do app, **Ctrl+Shift+L** (ou tecla **Alt** →
+*Ferramentas* → *Ver logs*) abre a tela de logs, com filtro por nível, busca e
+botão "Copiar tudo". O mesmo log fica em `data\logs\app.log`, ao lado do
+`AnaliseDesktop.exe` (ou em `desktop-gui\data\logs` no modo dev).
+
+**Regra do Regularize:** só o documento de capacidade de pagamento (PGFN) é
+analisado; dívida PGFN+RFB acima de R$ 600 mil = dentro, senão fora. O detalhe
+do job mostra o JSON extraído do documento.
 
 ## Estrutura
 
