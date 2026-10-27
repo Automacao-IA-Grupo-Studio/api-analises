@@ -127,4 +127,18 @@ class Robustez(unittest.TestCase):
             (d/'2025.txt').write_text('DARF Período Apuração 2025 TOTAL DO ARQUIVO 900.000.000,00')
             self.assertIsNone(a._proc_faturamento(tmp,self.elem('faturamento'),{})['dados'].get('media'))
 
+
+    def test_filial_no_nome_nunca_abre(self):
+        with patch.object(a.os, 'stat') as stat, patch.object(a, '_extrair_texto_raw') as ler:
+            self.assertEqual(a.extrair_texto('/origem/CNPJ FiLiAl (52).pdf'), '')
+            stat.assert_not_called()
+            ler.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp)/'B - Documentos'/'5 - Cliente'/'16 - CNPJ'
+            d.mkdir(parents=True)
+            for nome in ['CNPJ MATRIZ.pdf','CNPJ FILIAL.pdf','CNPJ filial (52).pdf']:
+                (d/nome).write_bytes(b'')
+            achados=list(a._varrer_pasta(tmp,['B - Documentos','5 - Cliente','16 - CNPJ'],{'.pdf'}))
+            self.assertEqual([Path(x).name for x in achados],['CNPJ MATRIZ.pdf'])
+
 if __name__=='__main__': unittest.main()

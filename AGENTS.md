@@ -288,3 +288,5 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - PGFN: compara documentos de capacidade de pagamento; totais divergentes deixam Perfil Transação inconclusivo. Quando CNPJ matriz está identificado, documento com CPF/CNPJ de outro contribuinte é descartado. Não inclui contencioso nem soma tabelas fiscais.
 - Faturamento: XLSX exige coluna anual de receita/faturamento identificada; DARF, arrecadação, DCTF e médias de tributos são descartados. Não presume ano a partir de datas soltas de emissão nem de nome com anos ambíguos. Texto explicitamente mensal não vira total anual.
 - Testes sintéticos versionados não contêm os documentos privados enviados. Conferência adicional local com os arquivos reais verifica valores esperados e hashes SHA-256 inalterados das origens. OCR/novos layouts ainda podem exigir conferência humana; não há garantia de erro zero.
+
+- Exclusão antecipada: qualquer arquivo cujo nome contenha filial (sem diferenciar maiúsculas/minúsculas) é ignorado antes de abertura, extração de texto e OCR, em todos os perfis e nos dois modos.

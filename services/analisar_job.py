@@ -243,6 +243,8 @@ def _varrer_pasta(raiz: str, pastas_alvo: list[str], extensoes: set[str]):
         if pos != len(pastas_alvo):
             continue
         for fname in sorted(filenames):
+            if "filial" in _normalizar(fname):
+                continue  # Nunca abre documentos identificados como filial no nome.
             if extensoes and Path(fname).suffix.lower() not in extensoes:
                 continue
             yield os.path.join(dirpath, fname)
@@ -485,6 +487,8 @@ _CACHE_TEXTO: dict[tuple, str] = {}
 
 def extrair_texto(caminho: str) -> str:
     """Extrai texto com cache (o mesmo arquivo pode ser lido por vários elementos)."""
+    if "filial" in _normalizar(os.path.basename(caminho)):
+        return ""  # Proteção também para chamadas diretas, antes de stat/leitura/OCR.
     st = os.stat(caminho)
     chave = (caminho, st.st_mtime_ns, st.st_size)
     if chave not in _CACHE_TEXTO:
