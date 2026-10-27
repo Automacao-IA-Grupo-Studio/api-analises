@@ -686,6 +686,7 @@
 
   <!-- Coluna direita: lista de jobs -->
   <section>
+<details class="card" style="margin-bottom:20px;padding:20px"><summary style="cursor:pointer;font-weight:600">Regras da análise</summary><p>Documentos de origem: somente leitura.</p><p style="margin:12px 0;font-size:13px">Somente leitura dos documentos de origem. Nenhum arquivo de cliente pode ser criado, alterado, movido ou apagado. Resultados e logs são gravados exclusivamente na área da aplicação.</p><p style="margin:12px 0;font-size:13px">Contrato: existência de PDF em A - Contrato/1 - Contrato Studio; não valida assinatura. Procuração: em branco, definida pelo Project.</p><p style="margin:12px 0;font-size:13px">Honorários: cláusula 5.1; ignora gross up e 14,25%. Fallback próximo de honorários/remuneração exige conferência. Gross up: expressão gross up ou 14,25%. Passivo: menção textual, sem interpretação de negação.</p><p style="margin:12px 0;font-size:13px">Perfil Family: examina PDF/TXT/XLSX em B - Documentos/2 - Fiscal, a pasta do Regularize. Extrai nomes e CPF/CNPJ identificados na seção de sócios dos relatórios fiscais; mantém arquivo e trecho por vínculo. CPF/CNPJ avulso não comprova vínculo nem parentesco. Layout não reconhecido fica sem dado.</p><p style="margin:12px 0;font-size:13px">CNPJ: extrai data de abertura e CNAE principal do bloco da matriz; tenta /0001 se necessário. CNAE pode ser extraído mesmo sem data.</p><p style="margin:12px 0;font-size:13px">Simples Nacional: informa situação atual e anos documentados por intervalos de opção encontrados, sem inferir histórico da situação atual. Histórico não reconhecido é explicitamente informado. Não consulta sistemas externos.</p><p style="margin:12px 0;font-size:13px">Perfil Transação: documento de capacidade de pagamento em B - Documentos/2 - Fiscal. Dívida PGFN+RFB &gt; R$ 600.000. Igual ao limite fica fora. Classificação A/B/C/D e contencioso não alteram a regra; contencioso não é somado. Sem cadastro exige evidência textual.</p><p style="margin:12px 0;font-size:13px">Perfil Previdenciário: arquivos com perfil no nome em B - Documentos/6 - Cruzamentos. Qualquer ano marcado ACIMA indica perfil; lê o veredito do documento, sem recalcular limite.</p><p style="margin:12px 0;font-size:13px">Faturamento: examina todos os TXT/PDF/XLSX em B - Documentos/1 - Contábil/5 - ECF, sem exigir FATURAMENTO no nome. Extrai totais anuais reconhecíveis. Exibe todos os anos, inclusive o corrente. Média aritmética apenas de anos anteriores ao ano corrente; em 2026, usa até 2025. Nunca soma anos para classificar. Anos não identificados não entram. Valores diferentes para um mesmo ano fechado deixam a média inconclusiva; valores iguais repetidos não duplicam o ano. Todos os valores observados e arquivos ficam nas evidências.</p><p style="margin:12px 0;font-size:13px">Perfil Fastpass: média dos anos fechados &gt; R$ 200 milhões. Todos os demais casos são inconclusivos, inclusive igualdade e ausência de dados.</p><p style="margin:12px 0;font-size:13px">Perfil Supply: média dos anos fechados &gt;= R$ 30 milhões. Sem média: inconclusivo.</p><p style="margin:12px 0;font-size:13px">Perfil Finap - Lei do Bem: média dos anos fechados &gt; R$ 50 milhões E CNAE principal na lista explícita de 296 CNAEs da planilha cnae Finep (2).xlsx. Igualdade não qualifica. Sem CNAE: verificar. A lista CNAES_FINAP em services/analisar_job.py é a fonte editável e acompanha o executável, sem dependência da planilha em produção. Alterações exigem novo build do analisador empacotado.</p><p style="margin:12px 0;font-size:13px">Detalhes mostram dados extraídos; evidências mostram caminhos de origem, trechos e valores. Ausência de dado não significa negativa. A maioria dos campos usa o primeiro documento reconhecido; não há escolha automática pelo mais recente. OCR pode falhar e requer conferência.</p><p style="margin:12px 0;font-size:13px">Checklist: sem contrato e com Perfil Transação. Fastpass inconclusivo não gera reprovação de faturamento baixo.</p></details>
     <!-- Stats -->
     <div class="stats-row" id="statsRow">
       <div class="stat-cell">
@@ -698,7 +699,7 @@
       </div>
       <div class="stat-cell">
         <div class="stat-num" id="statFastpass" style="color:var(--blue-mid)">—</div>
-        <div class="stat-label">Fastpass ≥ 20M</div>
+        <div class="stat-label">Perfil Fastpass > 200M</div>
       </div>
     </div>
 
@@ -724,8 +725,8 @@
                 <th>Job</th>
                 <th>Checklist</th>
                 <th>Contrato</th>
-                <th>Fastpass</th>
-                <th>Regularize</th>
+                <th>Perfil Fastpass</th>
+                <th>Perfil Transação</th>
                 <th>Analisado em</th>
               </tr>
             </thead>
@@ -836,7 +837,7 @@ function renderJobs(jobs) {
       ? `<span class="badge badge-ok">✔ Sim</span>`
       : fpText.toLowerCase().startsWith('não') || fpText.toLowerCase().startsWith('nao')
       ? `<span class="badge badge-warn">✕ Não</span>`
-      : `<span style="color:var(--fg-3);font-size:11px">—</span>`;
+      : `<span class="badge badge-warn" title="${esc(fpText)}">Inconclusivo</span>`;
 
     const sfVal = j.regularize || '';
     const sfTitle = esc(sfVal);
@@ -1009,7 +1010,7 @@ function renderModalBody(job) {
   // Checklist
   const alertas = [
     [job.alerta_sem_contrato,   'SEM CONTRATO'],
-    [job.alerta_baixo_fat,      'FATURAMENTO MÉDIO ABAIXO DE R$ 20M'],
+
     [job.alerta_regularize,     'COM REGULARIZE'],
   ];
   const temAlerta = alertas.some(([a]) => a);
@@ -1031,9 +1032,9 @@ function renderModalBody(job) {
     'Contrato':        ['contrato_existe','procuracao_existe','honorarios','gross_up','passivo'],
     'Data de Abertura': ['data_abertura'],
     'Simples Nacional': ['simples_nacional'],
-    'QSA':             ['socios'],
-    'Regularize':      ['regularize'],
-    'Perfil Prev.':    ['perfil'],
+    'Perfil Family':   ['socios'],
+    'Perfil Transação':      ['regularize'],
+    'Perfil Previdenciário':    ['perfil'],
     'Faturamento':     ['faturamento','fastpass','supply','finap'],
   };
 
@@ -1045,13 +1046,13 @@ function renderModalBody(job) {
     passivo:           'Passivo',
     data_abertura:     'Data de Abertura',
     simples_nacional:  'Simples Nacional',
-    socios:            'Sócios (QSA)',
-    regularize:        'Regularize',
-    perfil:            'Perfil Prev.',
+    socios:            'Perfil Family',
+    regularize:        'Perfil Transação',
+    perfil:            'Perfil Previdenciário',
     faturamento:       'Faturamento por ano e média',
-    fastpass:          'Fastpass (≥ R$ 20M)',
-    supply:            'Supply (≥ R$ 30M)',
-    finap:             'Finap (≥ R$ 50M + indústria)',
+    fastpass:          'Perfil Fastpass (> R$ 200M)',
+    supply:            'Perfil Supply (≥ R$ 30M)',
+    finap:             'Perfil Finap - Lei do Bem',
   };
 
   const catsHtml = Object.entries(cats).map(([cat, fields]) => `
@@ -1075,14 +1076,17 @@ function renderModalBody(job) {
           ? `<div class="result-val">${esc(val).replace(/\n/g, '<br>')}</div>`
           : `<div class="result-val" style="color:var(--fg-3);font-style:italic">${pendente ? 'Em branco — definido pelo Project' : '—'}</div>`;
 
-        // JSON do documento (o que foi extraído do arquivo) — aberto por padrão
-        let docJsonHtml = '';
-        const resDoc = f === 'regularize' ? resultadoDe(f) : null;
-        if (resDoc) {
-          docJsonHtml = `
-            <div class="raw-toggle doc-json-toggle">▾ Ocultar JSON do documento</div>
-            <div class="raw-block doc-json-block">${esc(JSON.stringify(resDoc, null, 2))}</div>`;
-        }
+        const resDoc = resultadoDe(f);
+        const docJsonHtml = resDoc ? `
+          <details style="margin-top:10px"><summary style="cursor:pointer">Mostrar detalhes</summary>
+            <p>${esc(resDoc.descricao || '')}</p>
+            <pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(resDoc.dados || {}, null, 2))}</pre>
+            <details><summary style="cursor:pointer">Mostrar evidência</summary>
+              <p style="overflow-wrap:anywhere">${(resDoc.arquivos || []).map(esc).join('<br>') || 'Arquivo não identificado'}</p>
+              <blockquote>${esc(resDoc.trecho || 'Consulte as evidências por valor nos detalhes.')}</blockquote>
+              <pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(resDoc, null, 2))}</pre>
+            </details>
+          </details>` : '';
 
         return `<div class="result-row ${rowClass}">
           <div class="result-icon">${icon}</div>

@@ -17,7 +17,7 @@ um checklist de alertas (sem contrato, faturamento baixo, com Regularize...).
 
 O **core de negócio é 100% o script Python** (`services/analisar_job.py`) —
 é ele que sabe onde procurar cada documento, como extrair cada dado e quais
-são os limiares (R$ 20M/30M/50M; Regularize = dívida PGFN+RFB acima de R$ 600 mil etc.). Tudo o mais
+são os limiares (R$ 200M/30M/50M; Regularize = dívida PGFN+RFB acima de R$ 600 mil etc.). Tudo o mais
 no repo (Node, banco, build) é só **transporte e persistência** do que esse
 script já decidiu. Se a tarefa for "mudar uma regra de negócio" (ex.: outro
 limiar, outra pasta-alvo, outro padrão de nome de arquivo), o lugar certo é
@@ -172,7 +172,7 @@ string)" — sem MySQL, sem rede.
   isso por variável de ambiente: o `.exe` do PyInstaller **ignora**
   `PYTHONUTF8`/`PYTHONIOENCODING`, e no Windows o pipe cai em cp1252, o que
   gerava `'charmap' codec can't encode character '\u2265'` (o "≥" de
-  "Fastpass (≥ R$ 20M)" sai em toda análise).
+  "Perfil Fastpass (> R$ 200M)" sai em toda análise).
 - **Regra do Regularize** (`_proc_regularize`): só olha o documento de
   capacidade de pagamento (PGFN). Dívida PGFN+RFB **> R$ 600.000** = dentro
   ("SIM — dentro do Regularize"); senão fora ("Não — fora ..."). A classificação
@@ -255,3 +255,22 @@ requirements.txt                    Os DOIS modos — deps Python do analisador
 - É uma **mudança visual** (cor, layout, texto da tela)? → ela normalmente
   precisa ir em `frontend/index.html` E `desktop-gui/frontend/index.html`
   juntos, pra não deixar os dois modos com dashboards diferentes.
+
+## Regras vigentes da análise (2026-10-27)
+
+Esta seção é a referência funcional exibida também no painel em Regras da análise.
+
+- Somente leitura dos documentos de origem. Nenhum arquivo de cliente pode ser criado, alterado, movido ou apagado. Resultados e logs são gravados exclusivamente na área da aplicação.
+- Contrato: existência de PDF em A - Contrato/1 - Contrato Studio; não valida assinatura. Procuração: em branco, definida pelo Project.
+- Honorários: cláusula 5.1; ignora gross up e 14,25%. Fallback próximo de honorários/remuneração exige conferência. Gross up: expressão gross up ou 14,25%. Passivo: menção textual, sem interpretação de negação.
+- Perfil Family: examina PDF/TXT/XLSX em B - Documentos/2 - Fiscal, a pasta do Regularize. Extrai nomes e CPF/CNPJ identificados na seção de sócios dos relatórios fiscais; mantém arquivo e trecho por vínculo. CPF/CNPJ avulso não comprova vínculo nem parentesco. Layout não reconhecido fica sem dado.
+- CNPJ: extrai data de abertura e CNAE principal do bloco da matriz; tenta /0001 se necessário. CNAE pode ser extraído mesmo sem data.
+- Simples Nacional: informa situação atual e anos documentados por intervalos de opção encontrados, sem inferir histórico da situação atual. Histórico não reconhecido é explicitamente informado. Não consulta sistemas externos.
+- Perfil Transação: documento de capacidade de pagamento em B - Documentos/2 - Fiscal. Dívida PGFN+RFB > R$ 600.000. Igual ao limite fica fora. Classificação A/B/C/D e contencioso não alteram a regra; contencioso não é somado. Sem cadastro exige evidência textual.
+- Perfil Previdenciário: arquivos com perfil no nome em B - Documentos/6 - Cruzamentos. Qualquer ano marcado ACIMA indica perfil; lê o veredito do documento, sem recalcular limite.
+- Faturamento: examina todos os TXT/PDF/XLSX em B - Documentos/1 - Contábil/5 - ECF, sem exigir FATURAMENTO no nome. Extrai totais anuais reconhecíveis. Exibe todos os anos, inclusive o corrente. Média aritmética apenas de anos anteriores ao ano corrente; em 2026, usa até 2025. Nunca soma anos para classificar. Anos não identificados não entram. Valores diferentes para um mesmo ano fechado deixam a média inconclusiva; valores iguais repetidos não duplicam o ano. Todos os valores observados e arquivos ficam nas evidências.
+- Perfil Fastpass: média dos anos fechados > R$ 200 milhões. Todos os demais casos são inconclusivos, inclusive igualdade e ausência de dados.
+- Perfil Supply: média dos anos fechados >= R$ 30 milhões. Sem média: inconclusivo.
+- Perfil Finap - Lei do Bem: média dos anos fechados > R$ 50 milhões E CNAE principal na lista explícita de 296 CNAEs da planilha cnae Finep (2).xlsx. Igualdade não qualifica. Sem CNAE: verificar. A lista CNAES_FINAP em services/analisar_job.py é a fonte editável e acompanha o executável, sem dependência da planilha em produção. Alterações exigem novo build do analisador empacotado.
+- Detalhes mostram dados extraídos; evidências mostram caminhos de origem, trechos e valores. Ausência de dado não significa negativa. A maioria dos campos usa o primeiro documento reconhecido; não há escolha automática pelo mais recente. OCR pode falhar e requer conferência.
+- Checklist: sem contrato e com Perfil Transação. Fastpass inconclusivo não gera reprovação de faturamento baixo.

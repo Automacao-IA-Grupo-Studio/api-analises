@@ -196,7 +196,7 @@ exports.analisarJob = async (req, res) => {
         finap:             campo('finap'),
         alerta_sem_contrato:   alertaAtivo('SEM CONTRATO'),
         alerta_sem_procuracao: alertaAtivo('SEM PROCURAÇÃO'),
-        alerta_baixo_fat:      alertaAtivo('FATURAMENTO MÉDIO ABAIXO DE R$ 20M'),
+        alerta_baixo_fat:      0,
         alerta_regularize:     alertaAtivo('COM REGULARIZE'),
         raw_resultado: JSON.stringify(analise),
       };
