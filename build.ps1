@@ -53,6 +53,26 @@ Write-Host "[1/5] Empacotando app desktop (Electron)..." -ForegroundColor Cyan
 Push-Location "$root\desktop-gui"
 npm install
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install (desktop-gui) falhou." }
+
+# O binario real do Electron (electron.exe, que o electron-packager usa
+# como base do AnaliseDesktop.exe) e baixado pelo script de postinstall do
+# pacote "electron" (node_modules\electron\install.js). Em npm's mais
+# recentes isso pode ser bloqueado por uma politica de seguranca de scripts
+# de instalacao (aviso "npm warn allow-scripts ... electron@x (postinstall:
+# node install.js)") - nesse caso o npm install "funciona" mas o binario
+# nunca e baixado, e o electron-packager roda sem erro porem NAO gera
+# nenhum .exe (nao ha nada pra empacotar). Forcamos o download aqui, de
+# forma idempotente, pra nao depender desse postinstall ter rodado.
+$electronDistExe = "$root\desktop-gui\node_modules\electron\dist\electron.exe"
+if (-not (Test-Path $electronDistExe)) {
+    Write-Host "  Binario do Electron nao encontrado (pode ter sido bloqueado pelo" -ForegroundColor Yellow
+    Write-Host "  postinstall/allow-scripts do npm) - baixando manualmente..." -ForegroundColor Yellow
+    node "$root\desktop-gui\node_modules\electron\install.js"
+    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Download do binario do Electron falhou (node_modules\electron\install.js)." }
+    if (-not (Test-Path $electronDistExe)) { Pop-Location; throw "node_modules\electron\install.js rodou mas nao gerou $electronDistExe" }
+    Write-Host "  ok: binario do Electron baixado" -ForegroundColor Green
+}
+
 npm run build:win
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Build do AnaliseDesktop.exe falhou." }
 Pop-Location
