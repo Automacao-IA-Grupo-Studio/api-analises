@@ -56,4 +56,75 @@ class Regras(unittest.TestCase):
         with patch.object(a,'candidatos',return_value=['simples.pdf']),patch.object(a,'extrair_texto',return_value=t):
             self.assertEqual(a._proc_simples('',e,{})['dados']['anos_optante'],[2020,2021,2022])
 
+
+class Robustez(unittest.TestCase):
+    def elem(self,id): return next(x for x in a.ELEMENTOS if x['id']==id)
+
+    def test_filial_nao_vira_matriz(self):
+        self.assertEqual(a._bloco_matriz('NUMERO DE INSCRICAO\n11.111.111/0002-22\nFILIAL\nDATA DE ABERTURA 20/08/2024'),'')
+        self.assertEqual(a._bloco_matriz('NUMERO DE INSCRICAO\n11.111.111/0001-11\nDATA DE ABERTURA 01/01/2000'),'')
+
+    def test_conflito_matriz(self):
+        texts = {'a':'NUMERO DE INSCRICAO\nMATRIZ\nDATA DE ABERTURA 01/01/2000',
+                 'b':'NUMERO DE INSCRICAO\nMATRIZ\nDATA DE ABERTURA 02/01/2000'}
+        with patch.object(a,'candidatos',return_value=iter(texts)), patch.object(a,'extrair_texto',side_effect=texts.get):
+            self.assertEqual(a._proc_data_abertura('',self.elem('data_abertura'),{})['status'],'inconclusivo')
+
+    def test_fiscal_nao_extrai_certificado_ou_certidao_como_socio(self):
+        text='CNPJ do certificado: 99.999.999/0001-99\nSócios e Administradores\n123.456.789-00 NOME EXEMPLO DIRETOR REGULAR\nCertidão Emitida ______\nCNPJ: 11.111.111/0001-11\nDiagnóstico Fiscal\n987.654.321-00 OUTRO'
+        with patch.object(a,'_varrer_pasta',return_value=['x']),patch.object(a,'extrair_texto',return_value=text):
+            socios=a._proc_qsa('',self.elem('socios'),{})['dados']['socios']
+            self.assertEqual(len(socios),1)
+            self.assertEqual(socios[0]['nome'],'NOME EXEMPLO')
+
+    def test_simples_nao_inclui_simei_emissao_ou_evento_futuro(self):
+        text='Consulta 01/01/2020 01/01/2026\nSituação no Simples Nacional: NÃO optante\nOpções pelo Simples Nacional em Períodos Anteriores\n01/01/2018 31/12/2019\nEnquadramentos no SIMEI em Períodos Anteriores\n01/01/2020 31/12/2021\nEventos Futuros (Simples Nacional)\n01/01/2027 31/12/2028'
+        with patch.object(a,'candidatos',return_value=['x']),patch.object(a,'extrair_texto',return_value=text):
+            r=a._proc_simples('',self.elem('simples_nacional'),{})
+            self.assertEqual(r['dados']['anos_optante'],[2018,2019])
+
+    def test_limite_transacao_nao_soma_contencioso(self):
+        t='capacidade de pagamento\nValor total da dívida na PGFN e RFB: R$ 500.000,00\nValor em contencioso administrativo: R$ 900.000,00'
+        with patch.object(a,'candidatos',return_value=['x']),patch.object(a,'extrair_texto',return_value=t):
+            self.assertFalse(a._proc_regularize('',self.elem('regularize'),{})['dados']['dentro'])
+
+    def test_divergencia_pgfn_inconclusiva(self):
+        texts={x:f'capacidade de pagamento\nValor total da dívida na PGFN e RFB: R$ {v}' for x,v in [('x','500.000,00'),('y','900.000,00')]}
+        with patch.object(a,'candidatos',return_value=iter(texts)),patch.object(a,'extrair_texto',side_effect=texts.get):
+            self.assertEqual(a._proc_regularize('',self.elem('regularize'),{})['status'],'inconclusivo')
+
+    def test_coluna_media_e_nao_soma(self):
+        from unittest.mock import MagicMock
+        sh=MagicMock();sh.title='Dados';sh.values=iter([('ANO','SOMA VALOR ORIGINAL','MÉDIA (÷ DOCS. MENSAIS)','STATUS'),('2025',44000000,4000000,'ACIMA DO LIMIAR')])
+        wb=MagicMock();wb.__iter__.return_value=iter([sh])
+        with patch.object(a,'_varrer_pasta',return_value=['perfil.xlsx']),patch('openpyxl.load_workbook',return_value=wb):
+            r=a._proc_perfil('',self.elem('perfil'),{})
+            self.assertEqual(r['dados']['anos'][0]['media'],4000000)
+
+    def test_busca_pasta_exata_e_acento(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            certo=Path(tmp)/'B - Documentos'/'1 - Contabil'/'5 - ECF';certo.mkdir(parents=True);(certo/'2025.txt').write_text('x')
+            errado=Path(tmp)/'B - Documentos'/'11 - Contabil'/'5 - ECF';errado.mkdir(parents=True);(errado/'2025.txt').write_text('x')
+            achados=list(a._varrer_pasta(tmp,['B - Documentos','1 - Contábil','5 - ECF'],{'.txt'}))
+            self.assertEqual(len(achados),1)
+
+    def test_cache_rele_arquivo_atualizado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'x.txt';p.write_text('antigo')
+            self.assertEqual(a.extrair_texto(str(p)),'antigo')
+            p.write_text('novo conteudo')
+            self.assertEqual(a.extrair_texto(str(p)),'novo conteudo')
+
+
+    def test_ano_nao_vem_da_emissao_e_conflitos_nao_sao_chutados(self):
+        self.assertIsNone(a._ano_do_arquivo('relatorio.txt','Emitido em 01/10/2026'))
+        self.assertIsNone(a._ano_do_arquivo('receita2024.txt','Ano calendário 2025'))
+        self.assertEqual(a._ano_do_arquivo('receita.txt','Ano calendário 2025'),'2025')
+
+    def test_arrecadacao_nao_e_faturamento(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp)/'B - Documentos'/'1 - Contábil'/'5 - ECF';d.mkdir(parents=True)
+            (d/'2025.txt').write_text('DARF Período Apuração 2025 TOTAL DO ARQUIVO 900.000.000,00')
+            self.assertIsNone(a._proc_faturamento(tmp,self.elem('faturamento'),{})['dados'].get('media'))
+
 if __name__=='__main__': unittest.main()

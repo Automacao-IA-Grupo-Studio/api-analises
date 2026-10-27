@@ -264,7 +264,7 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - Contrato: existência de PDF em A - Contrato/1 - Contrato Studio; não valida assinatura. Procuração: em branco, definida pelo Project.
 - Honorários: cláusula 5.1; ignora gross up e 14,25%. Fallback próximo de honorários/remuneração exige conferência. Gross up: expressão gross up ou 14,25%. Passivo: menção textual, sem interpretação de negação.
 - Perfil Family: examina PDF/TXT/XLSX em B - Documentos/2 - Fiscal, a pasta do Regularize. Extrai nomes e CPF/CNPJ identificados na seção de sócios dos relatórios fiscais; mantém arquivo e trecho por vínculo. CPF/CNPJ avulso não comprova vínculo nem parentesco. Layout não reconhecido fica sem dado.
-- CNPJ: extrai data de abertura e CNAE principal do bloco da matriz; tenta /0001 se necessário. CNAE pode ser extraído mesmo sem data.
+- CNPJ: extrai data de abertura e CNAE principal do bloco da matriz; exige indicação explícita MATRIZ; nunca usa filial nem presume matriz pelo sufixo /0001. Se o cartão não for reconhecido, aceita a seção Dados Cadastrais da Matriz do relatório fiscal. CNAE pode ser extraído mesmo sem data.
 - Simples Nacional: informa situação atual e anos documentados por intervalos de opção encontrados, sem inferir histórico da situação atual. Histórico não reconhecido é explicitamente informado. Não consulta sistemas externos.
 - Perfil Transação: documento de capacidade de pagamento em B - Documentos/2 - Fiscal. Dívida PGFN+RFB > R$ 600.000. Igual ao limite fica fora. Classificação A/B/C/D e contencioso não alteram a regra; contencioso não é somado. Sem cadastro exige evidência textual.
 - Perfil Previdenciário: arquivos com perfil no nome em B - Documentos/6 - Cruzamentos. Qualquer ano marcado ACIMA indica perfil; lê o veredito do documento, sem recalcular limite.
@@ -276,3 +276,15 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - Checklist: sem contrato e com Perfil Transação. Fastpass inconclusivo não gera reprovação de faturamento baixo.
 
 - Tags do relatório: azul = encontrado; laranja = não encontrado. Classificação separada: verde = é perfil; vermelho = não é perfil; laranja = inconclusivo. Encontrar sócios não comprova Perfil Family; sem critério de classificação definido, fica inconclusivo.
+
+## Robustez validada com documentos (2026-10-27)
+
+- Pastas comparadas por componentes inteiros, em ordem, ignorando acentos e caixa. Evita confundir 2 - Fiscal com 12 - Fiscal.
+- PDFs mistos: extração e OCR por página sem texto, preservando número da página. OCR usa arquivos temporários fora da origem, timeout e fallback de idioma. Falha de leitura não significa resposta negativa. Cache invalidado por tamanho e data de modificação.
+- Matriz: indicação explícita no conteúdo, datas válidas não futuras, CNAE principal sem confundir com secundários. Documentos de matriz divergentes tornam o resultado inconclusivo. Fonte alternativa é somente a seção cadastral explicitamente da matriz no relatório fiscal.
+- Sócios: leitura limitada à seção societária, encerrada antes de Certidão Emitida e Diagnóstico Fiscal. CPF/CNPJ do certificado, contribuinte e responsáveis fora da seção não são sócios. Cargo e situação cadastral não compõem o nome. Não infere parentesco.
+- Simples: períodos de opção separados de SIMEI, consulta/emissão e eventos futuros. Ausência explícita de períodos anteriores é evidência; ausência de informação não prova que nunca foi optante.
+- Perfil Previdenciário: XLSX lido por cabeçalhos ANO/MÉDIA/STATUS; nunca confundir SOMA VALOR ORIGINAL com MÉDIA. Relatorio_MEDIA de arrecadação não produz perfil nem faturamento. Vereditos divergentes por ano são inconclusivos; texto solto genérico não decide perfil.
+- PGFN: compara documentos de capacidade de pagamento; totais divergentes deixam Perfil Transação inconclusivo. Quando CNPJ matriz está identificado, documento com CPF/CNPJ de outro contribuinte é descartado. Não inclui contencioso nem soma tabelas fiscais.
+- Faturamento: XLSX exige coluna anual de receita/faturamento identificada; DARF, arrecadação, DCTF e médias de tributos são descartados. Não presume ano a partir de datas soltas de emissão nem de nome com anos ambíguos. Texto explicitamente mensal não vira total anual.
+- Testes sintéticos versionados não contêm os documentos privados enviados. Conferência adicional local com os arquivos reais verifica valores esperados e hashes SHA-256 inalterados das origens. OCR/novos layouts ainda podem exigir conferência humana; não há garantia de erro zero.

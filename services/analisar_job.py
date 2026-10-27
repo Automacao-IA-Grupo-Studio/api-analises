@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import json
+import unicodedata
 from pathlib import Path
 from datetime import datetime
 
@@ -211,26 +212,35 @@ ELEMENTOS: list[dict] = [
 # ══════════════════════════════════════════════════════════════════════════════
 #  BUSCA DE ARQUIVOS
 # ══════════════════════════════════════════════════════════════════════════════
+def _normalizar(texto):
+    return ''.join(c for c in unicodedata.normalize('NFKD', texto or '') if not unicodedata.combining(c)).casefold()
+
 def _contem_todos(nome: str, termos: list[str]) -> bool:
-    n = nome.lower()
-    return all(t.lower() in n for t in termos)
+    n = _normalizar(nome)
+    return all(_normalizar(t) in n for t in termos)
 
 
 def _contem_qualquer(nome: str, termos: list[str]) -> bool:
-    n = nome.lower()
-    return any(t.lower() in n for t in termos)
+    n = _normalizar(nome)
+    return any(_normalizar(t) in n for t in termos)
 
 
 def _nao_contem(nome: str, termos: list[str]) -> bool:
-    n = nome.lower()
-    return not any(t.lower() in n for t in termos)
+    n = _normalizar(nome)
+    return not any(_normalizar(t) in n for t in termos)
 
 
 def _varrer_pasta(raiz: str, pastas_alvo: list[str], extensoes: set[str]):
     """Gera todos os arquivos cujo caminho passa pelas pastas-alvo."""
-    for dirpath, _dirs, filenames in os.walk(raiz):
-        partes = [p.lower() for p in Path(dirpath).parts]
-        if not all(any(alvo.lower() in p for p in partes) for alvo in pastas_alvo):
+    for dirpath, dirs, filenames in os.walk(raiz):
+        dirs.sort()
+        partes = [_normalizar(p) for p in Path(dirpath).parts]
+        # Ordered full components: 2 - Fiscal must not match 12 - Fiscal.
+        pos = 0
+        for parte in partes:
+            if pos < len(pastas_alvo) and parte == _normalizar(pastas_alvo[pos]):
+                pos += 1
+        if pos != len(pastas_alvo):
             continue
         for fname in sorted(filenames):
             if extensoes and Path(fname).suffix.lower() not in extensoes:
@@ -338,7 +348,7 @@ def _garantir_tesseract() -> bool:
     return False
 
 
-def _ocr_pdf(caminho: str) -> str:
+def _ocr_pdf(caminho: str, paginas=None) -> str:
     _log("      [ocr] PDF sem texto — ativando OCR Tesseract...")
     if not _garantir_tesseract():
         return ""
@@ -358,20 +368,33 @@ def _ocr_pdf(caminho: str) -> str:
     try:
         import pytesseract
     except ImportError:
-        _log("      [ocr] pytesseract não instalado")
-        return ""
+        pytesseract = None
     import io
 
     try:
         doc = fitz.open(caminho)
         partes: list[str] = []
         for i, page in enumerate(doc):
+            if paginas is not None and i not in paginas:
+                continue
             pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
             img = Image.open(io.BytesIO(pix.tobytes("png")))
-            try:
-                txt = pytesseract.image_to_string(img, lang="por")
-            except Exception:
-                txt = pytesseract.image_to_string(img)
+            if pytesseract is None:
+                import tempfile, subprocess, shutil
+                with tempfile.TemporaryDirectory(prefix='analise-ocr-') as tmp:
+                    imagem = os.path.join(tmp, 'pagina.png')
+                    img.save(imagem)
+                    cmd = os.environ.get('TESSERACT_CMD') or shutil.which('tesseract')
+                    if not cmd: return ''
+                    proc = subprocess.run([cmd, imagem, 'stdout', '-l', 'por'], capture_output=True, text=True, encoding='utf-8', timeout=120)
+                    if proc.returncode:
+                        proc = subprocess.run([cmd, imagem, 'stdout', '-l', 'eng'], capture_output=True, text=True, encoding='utf-8', timeout=120)
+                    txt = proc.stdout if proc.returncode == 0 else ''
+            else:
+                try:
+                    txt = pytesseract.image_to_string(img, lang="por", timeout=120)
+                except Exception:
+                    txt = pytesseract.image_to_string(img, timeout=120)
             partes.append(txt)
             _log(f"      [ocr] página {i+1}: {len(txt)} chars")
         doc.close()
@@ -393,32 +416,24 @@ def _extrair_texto_raw(caminho: str) -> str:
     _log(f"      [lendo] {nome}")
     try:
         if ext == ".pdf":
-            partes: list[str] = []
+            partes = []
             with pdfplumber.open(caminho) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        partes.append(t)
-            texto = "\n".join(partes)
-            if texto.strip():
-                _log(f"      [pdf] {len(texto)} chars (pdfplumber)")
-                return texto
-
-            try:
-                try:
-                    import pymupdf as fitz  # nova API (evita warning no stdout)
-                except ImportError:
-                    import fitz
-                doc = fitz.open(caminho)
-                texto2 = "\n".join(p.get_text() for p in doc)
-                doc.close()
-                if texto2.strip():
-                    _log(f"      [pdf] {len(texto2)} chars (pymupdf)")
-                    return texto2
-            except Exception as e:
-                _log(f"      [pymupdf] erro: {e}")
-
-            return _ocr_pdf(caminho)
+                for i, page in enumerate(pdf.pages):
+                    try:
+                        texto = page.extract_text() or ''
+                    except Exception:
+                        texto = ''
+                    if not texto.strip():
+                        try:
+                            import pymupdf
+                            with pymupdf.open(caminho) as doc:
+                                texto = doc[i].get_text()
+                        except Exception:
+                            pass
+                    if not texto.strip():
+                        texto = _ocr_pdf(caminho, {i})
+                    partes.append(f"\n[Página {i+1}]\n{texto}")
+            return "\n".join(partes) if any(re.search(r"[a-zA-Z]", x.split(']')[-1]) for x in partes) else ''
 
         elif ext == ".txt":
             for enc in ("utf-8", "latin-1", "cp1252"):
@@ -435,13 +450,14 @@ def _extrair_texto_raw(caminho: str) -> str:
         elif ext in (".xlsx", ".xls"):
             try:
                 import openpyxl
-                wb = openpyxl.load_workbook(caminho, data_only=True)
+                wb = openpyxl.load_workbook(caminho, data_only=True, read_only=True)
                 linhas: list[str] = []
                 for ws in wb.worksheets:
                     for row in ws.iter_rows(values_only=True):
                         linha = " ".join(str(c) for c in row if c is not None)
                         if linha.strip():
                             linhas.append(linha)
+                wb.close()
                 texto = "\n".join(linhas)
                 _log(f"      [xlsx] {len(linhas)} linhas")
                 return texto
@@ -464,14 +480,16 @@ def _extrair_texto_raw(caminho: str) -> str:
 
 
 
-_CACHE_TEXTO: dict[str, str] = {}
+_CACHE_TEXTO: dict[tuple, str] = {}
 
 
 def extrair_texto(caminho: str) -> str:
     """Extrai texto com cache (o mesmo arquivo pode ser lido por vários elementos)."""
-    if caminho not in _CACHE_TEXTO:
-        _CACHE_TEXTO[caminho] = _extrair_texto_raw(caminho)
-    return _CACHE_TEXTO[caminho]
+    st = os.stat(caminho)
+    chave = (caminho, st.st_mtime_ns, st.st_size)
+    if chave not in _CACHE_TEXTO:
+        _CACHE_TEXTO[chave] = _extrair_texto_raw(caminho)
+    return _CACHE_TEXTO[chave]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -594,12 +612,16 @@ def _proc_gross_up(raiz, elem, ctx):
     arquivos = list(candidatos(raiz, elem))
     if not arquivos:
         return _r()
+    legiveis = []
     for arq in arquivos:
         texto = extrair_texto(arq)
+        if texto.strip(): legiveis.append(arq)
         m = re.search(r"gross[\s\-]?up|14[,\.]25\s*%", texto, re.IGNORECASE)
-        if m:
+        if m and not re.search(r"(?:n[aã]o|sem)\s+(?:se\s+aplica\s+)?gross[\s-]?up", texto, re.I):
             return _r("Sim (14,25%)", _trecho(texto, m.start(), m.end()), [arq])
-    return _r("Não", arquivos=arquivos[:1], status="ok")
+    if not legiveis:
+        return _r("Inconclusivo — contrato sem texto legível", arquivos=arquivos, status="inconclusivo")
+    return _r("Não", arquivos=legiveis, status="ok")
 
 
 # ── Booleano genérico (Passivo) ──────────────────────────────────────────────
@@ -609,49 +631,75 @@ def _proc_booleano(raiz, elem, ctx):
         texto = extrair_texto(arq)
         for p in elem.get("regex", []):
             m = re.search(p, texto, re.IGNORECASE)
-            if m:
+            if m and not re.search(r"(?:sem|n[aã]o\s+(?:h[aá]|existem?|possui))\s+passivos?", texto[max(0,m.start()-50):m.end()], re.I):
                 return _r("Sim (mencionado no contrato)", _trecho(texto, m.start(), m.end()), [arq])
     return _r(arquivos=arquivos[:1], status="sem_dado" if arquivos else "nao_encontrado")
 
 
 # ── Data de abertura: bloco da MATRIZ ────────────────────────────────────────
 def _bloco_matriz(texto: str) -> str:
-    """Num PDF com matriz + filiais, devolve só o trecho do estabelecimento MATRIZ."""
-    partes = re.split(r"(?=N[ÚU]MERO\s+DE\s+INSCRI[ÇC][ÃA]O)", texto, flags=re.IGNORECASE)
-    for p in partes:
-        if re.search(r"\bMATRIZ\b", p) and not re.search(r"\bFILIAL\b", p[:500]):
-            return p
-    for p in partes:
-        if re.search(r"/0001-\d{2}", p):
-            return p
-    return texto
+    partes = re.split(r"(?=N[ÚU]MERO\s+DE\s+INSCRI\S{1,3}O)", texto, flags=re.I)
+    for bloco in partes:
+        if re.search(r"\bMATR[IE]Z\b", bloco, re.I) and not re.search(r"\bFILIAL\b", bloco[:500], re.I):
+            return bloco
+    # No fallback to arbitrary text or to /0001: explicit evidence of matriz is mandatory.
+    return ''
 
 
 def _proc_data_abertura(raiz, elem, ctx):
-    for arq in candidatos(raiz, elem):
+    observacoes, arquivos = [], []
+    candidatos_ordenados = sorted(set(candidatos(raiz, elem)), key=lambda x: ('matriz' not in _normalizar(os.path.basename(x)), x))
+    for arq in candidatos_ordenados:
         texto = extrair_texto(arq)
         bloco = _bloco_matriz(texto)
-        m = re.search(
-            r"DATA\s+DE\s+(?:CONSTITUI[ÇC][ÃA]O|ABERTURA)[\s\S]{0,200}?(\d{2}[/\-.]\d{2}[/\-.]\d{4})",
-            bloco, re.IGNORECASE)
-        mc = re.search(r"ATIVIDADE\s+ECON[ÔO]MICA\s+PRINCIPAL\s*\n?\s*(\d{2}\.?\d{2}-?\d[/-]?\d{2})\s*-\s*([^\n]+)",
-                       bloco, re.IGNORECASE)
-        dados = {}
-        if mc:
-            ctx["cnae_principal"] = mc.group(1)
-            ctx["cnae_descricao"] = mc.group(2).strip()
-            dados = {"cnae_principal": mc.group(1), "cnae_descricao": mc.group(2).strip()}
-        if not m and not mc:
+        if not bloco:
             continue
-        ctx["cnae_arquivo"] = arq
-        ctx["cnae_trecho"] = mc.group(0) if mc else ""
-        return _r(m.group(1) if m else "Data não identificada", _trecho(bloco, mc.start(), mc.end()) if mc else "", [arq], dados=dados)
-    return _r()
+        arquivos.append(arq)
+        m = re.search(r"DATA\s+DE\s+(?:CONSTITUI\S{1,3}O|ABERTURA)[\s\S]{0,200}?(\d{2}[/.-]\d{2}[/.-]\d{4})", bloco, re.I)
+        data = None
+        if m:
+            try:
+                dt = datetime.strptime(re.sub(r'[.-]', '/', m.group(1)), '%d/%m/%Y')
+                if dt <= datetime.now(): data = dt.strftime('%d/%m/%Y')
+            except ValueError:
+                pass
+        mc = re.search(r"ATIVIDADE\s+ECON[ÔO]MICA\s+PRINCIPAL\s*\n?\s*(\d{2}\.?\d{2}-?\d[/-]?\d{2})\s*[-–]\s*([^\n]+)", bloco, re.I)
+        cnpj = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", bloco)
+        observacoes.append({"data":data,"cnae":mc.group(1) if mc else None,"cnpj":cnpj.group(0) if cnpj else None,"arquivo":arq,"trecho":bloco[:1800]})
+    if not observacoes or not any(x['data'] and x['cnae'] and x['cnpj'] for x in observacoes):
+        for arq in _varrer_pasta(raiz, ['B - Documentos','2 - Fiscal'], {'.pdf','.txt'}):
+            texto = extrair_texto(arq)
+            bloco = re.search(r"Dados\s+Cadastrais\s+da\s+Matriz([\s\S]*?)(?=S[oó]cios\s+e\s+Administradores|Certid[aã]o|Diagn[oó]stico|\Z)", texto, re.I)
+            if not bloco: continue
+            t = bloco.group(1)
+            md = re.search(r"Data\s+de\s+Abertura\s*:\s*(\d{2}/\d{2}/\d{4})",t,re.I)
+            mc = re.search(r"CNAE\s*:\s*(\d{4}-\d/\d{2})",t,re.I)
+            mj = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",t)
+            if md:
+                try:
+                    if datetime.strptime(md.group(1),'%d/%m/%Y') > datetime.now(): continue
+                except ValueError: continue
+            if md or mc:
+                arquivos.append(arq)
+                observacoes.append({'data':md.group(1) if md else None,'cnae':mc.group(1) if mc else None,'cnpj':mj.group(0) if mj else None,'arquivo':arq,'trecho':bloco.group(0)})
+    datas = {x['data'] for x in observacoes if x['data']}
+    cnaes = {re.sub(r'\D','',x['cnae']) for x in observacoes if x['cnae']}
+    cnpjs = {x['cnpj'] for x in observacoes if x['cnpj']}
+    conflito = len(datas)>1 or len(cnaes)>1 or len(cnpjs)>1
+    if conflito or not observacoes:
+        return _r('Inconclusivo — matriz ausente ou documentos de matriz conflitantes', arquivos=arquivos,
+                  status='inconclusivo', dados={"evidencias":observacoes})
+    fonte = next((x for x in observacoes if x['cnae']), observacoes[0])
+    ctx.update(cnae_principal=fonte['cnae'], cnae_arquivo=fonte['arquivo'], cnae_trecho=fonte['trecho'])
+    if len(cnpjs)==1: ctx['cnpj_matriz'] = next(iter(cnpjs))
+    return _r(next(iter(datas)) if datas else 'Data não identificada', arquivos=arquivos,
+              dados={"cnae_principal":fonte['cnae'], "cnpj_matriz":ctx.get('cnpj_matriz'), "evidencias":observacoes})
 
 
 # ── Simples Nacional ─────────────────────────────────────────────────────────
 def _proc_simples(raiz, elem, ctx):
     situacoes, periodos, evidencias, arquivos = [], [], [], []
+    sem_historico = []
     hoje = datetime.now()
     for arq in candidatos(raiz, elem):
         texto = extrair_texto(arq)
@@ -662,15 +710,23 @@ def _proc_simples(raiz, elem, ctx):
                 situacoes.append(label + ": " + m.group(1).strip())
                 evidencias.append({"arquivo": arq, "trecho": m.group(0)})
                 reconhecido = True
+        neg = re.search(r"(?:op\S{1,4}es|op[çc][oõ]es)\s+pelo\s+Simples\s+Nacional\s+em\s+Per\S{1,3}odos\s+Anteriores\s*:\s*N[aã]o\s+Existem", texto, re.I)
+        if neg:
+            sem_historico.append(arq)
+            evidencias.append({'arquivo':arq,'trecho':neg.group(0)})
+            reconhecido = True
         # Work line by line, keeping Simples and SIMEI tables separate.
-        secao = "simples"
+        secao = None
         for linha in texto.splitlines():
             if re.search(r"SIMEI", linha, re.I):
                 secao = "simei"
-            elif re.search(r"Simples Nacional|per[ií]odos anteriores|op[çc][oõ]es anteriores", linha, re.I):
+            elif re.search(r"Simples Nacional", linha, re.I):
                 secao = "simples"
             if secao != "simples":
                 continue
+            if re.search(r"agendament|eventos? futuros?", linha, re.I):
+                secao = None
+            if secao != 'simples': continue
             datas = re.findall(r"\d{2}/\d{2}/\d{4}", linha)
             if len(datas) < 2 and not (datas and re.search(r"optante.*desde|data\s+(?:de\s+)?op[çc][aã]o|atual|vigente", linha, re.I)):
                 continue
@@ -689,10 +745,13 @@ def _proc_simples(raiz, elem, ctx):
             arquivos.append(arq)
     anos = sorted({ano for periodo in periodos for ano in periodo['anos']})
     linhas = list(dict.fromkeys(situacoes))
+    if sem_historico and not anos:
+        linhas.append('Sem períodos anteriores de opção pelo Simples Nacional, conforme consulta.')
     linhas.append("Já foi optante. Anos documentados: " + ", ".join(map(str, anos)) if anos else
+                  "Nenhum ano anterior documentado como optante." if sem_historico else
                   "Histórico de anos no Simples não identificado; não inferido da situação atual.")
     return _r("\n".join(linhas) if arquivos else "", arquivos=arquivos,
-              dados={"anos_optante": anos, "periodos": periodos, "evidencias": evidencias})
+              dados={"anos_optante": anos, "periodos": periodos, "sem_periodos_anteriores": bool(sem_historico), "evidencias": evidencias})
 
 
 # ── QSA ──────────────────────────────────────────────────────────────────────
@@ -709,7 +768,7 @@ def _proc_qsa(raiz, elem, ctx):
     for arq in _varrer_pasta(raiz, elem["pasta"], {".pdf", ".txt", ".xlsx"}):
         texto = extrair_texto(arq)
         # Restrict to the corporate-partner section, never arbitrary CPF/CNPJ in a report.
-        sec = re.search(r"(?:quadro\s+(?:de\s+)?s[oó]cios[^\n]*|quadro\s+societ[aá]rio|s[oó]cios\s+e\s+administradores)([\s\S]*?)(?=\n\s*(?:Diagn[oó]stico|Pend[eê]ncias|D[eé]bitos|Situa[çc][aã]o Fiscal)\b|\Z)", texto, re.I)
+        sec = re.search(r"(?:quadro\s+(?:de\s+)?s[oó]cios[^\n]*|quadro\s+societ[aá]rio|s[oó]cios\s+e\s+administradores)([\s\S]*?)(?=\n\s*(?:Certid[aã]o|Diagn[oó]stico|Pend[eê]ncias|D[eé]bitos|Situa[çc][aã]o Fiscal)\b|\Z)", texto, re.I)
         if not sec:
             continue
         bloco = sec.group(1)
@@ -719,10 +778,15 @@ def _proc_qsa(raiz, elem, ctx):
                 continue
             documento = m.group('doc')
             nome = (linha[:m.start()] + ' ' + linha[m.end():]).strip(' :|-')
+            if re.match(r"^(?:CNPJ|CPF|Respons[aá]vel)\s*:", linha, re.I):
+                continue
+            qualificacao = re.search(r"\b(PRESIDENTE|DIRETOR(?:A)?|ADMINISTRADOR(?:A)?|SOCIO(?:-ADMINISTRADOR)?|S[ÓO]CIO(?:-ADMINISTRADOR)?|CONSELHEIRO|TITULAR)\b", nome, re.I)
+            cargo = nome[qualificacao.start():] if qualificacao else ''
+            if qualificacao: nome = nome[:qualificacao.start()].strip()
             if not nome or (nome, documento) in vistos:
                 continue
             vistos.add((nome, documento))
-            socios.append({"nome": nome, "documento": documento, "tipo": "CNPJ" if len(re.sub(r"\D", "", documento)) == 14 else "CPF"})
+            socios.append({"nome": nome, "qualificacao": cargo, "documento": documento, "tipo": "CNPJ" if len(re.sub(r"\D", "", documento)) == 14 else "CPF"})
             evidencias.append({"arquivo": arq, "trecho": linha})
             if arq not in arquivos:
                 arquivos.append(arq)
@@ -731,9 +795,9 @@ def _proc_qsa(raiz, elem, ctx):
 
 
 # ── Regularize ───────────────────────────────────────────────────────────────
-def _proc_regularize(raiz, elem, ctx):
+def _proc_regularize_primeiro(raiz, elem, ctx, arquivos=None):
     # 1) Consulta de capacidade de pagamento (PGFN)
-    for arq in candidatos(raiz, elem):
+    for arq in arquivos if arquivos is not None else candidatos(raiz, elem):
         texto = extrair_texto(arq)
         if not re.search(r"capacidade\s+de\s+pagamento", texto, re.IGNORECASE):
             continue
@@ -765,6 +829,8 @@ def _proc_regularize(raiz, elem, ctx):
                          "classificacao_documento": classe_txt,   # informativo, não entra na regra
                          "perfil_regularize": eh})
 
+    if arquivos is not None:
+        return _r()
     # 2) Arquivo (normalmente .txt) avisando que NÃO há cadastro no Regularize
     for caminho in _varrer_pasta(raiz, ["B - Documentos", "2 - Fiscal"], set()):
         if "regularize" in os.path.basename(caminho).lower() and re.search(r"(?:sem\s+cadastro|n[aã]o\s+(?:possui|cadastrad))", extrair_texto(caminho), re.I):
@@ -772,6 +838,31 @@ def _proc_regularize(raiz, elem, ctx):
             return _r("Sem cadastro no Regularize", arquivos=[caminho], status="ok",
                       dados={"perfil_regularize": False, "sem_cadastro": True})
     return _r()
+
+
+def _proc_regularize(raiz, elem, ctx):
+    observacoes, candidatos_lidos = [], []
+    for arq in candidatos(raiz, elem):
+        candidatos_lidos.append(arq)
+        texto = extrair_texto(arq)
+        mj = re.search(r"CPF/CNPJ\s*:\s*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto, re.I)
+        if mj and ctx.get('cnpj_matriz') and mj.group(1) != ctx['cnpj_matriz']:
+            continue
+        r = _proc_regularize_primeiro(raiz, elem, ctx, [arq])
+        if r['valor']: observacoes.append(r)
+    if observacoes:
+        evidencias = [{'arquivo':r['arquivos'][0], 'trecho':r['trecho'], **r['dados']} for r in observacoes]
+        if len({r['dados']['divida_total'] for r in observacoes}) > 1:
+            return _r('Inconclusivo — documentos PGFN com dívidas divergentes', arquivos=candidatos_lidos,
+                      status='inconclusivo', dados={'evidencias':evidencias})
+        r = observacoes[0]
+        r['arquivos'] = [x['arquivos'][0] for x in observacoes]
+        r['dados']['evidencias'] = evidencias
+        return r
+    # No inferred negative from absent or unreadable capacity reports.
+    if candidatos_lidos:
+        return _r('Inconclusivo — dívida não extraída de documento compatível', arquivos=candidatos_lidos, status='inconclusivo')
+    return _proc_regularize_primeiro(raiz, elem, ctx)
 
 
 # ── Perfil previdenciário (todos os anos) ────────────────────────────────────
@@ -796,26 +887,43 @@ def _parse_perfil(texto: str) -> list[dict]:
 
 
 def _proc_perfil(raiz, elem, ctx):
-    for arq in candidatos(raiz, elem):
-        texto = extrair_texto(arq)
-        anos = _parse_perfil(texto)
-        if anos:
-            acima = [a["ano"] for a in anos if a["status"] == "ACIMA"]
-            cab = f"É PERFIL — acima em: {', '.join(acima)}" if acima else "Não é perfil — nenhum ano acima"
-            linhas = [cab]
-            for a in anos:
-                med = _fmt_num(a["media"]) if a["media"] is not None else "—"
-                linhas.append(a["ano"] + ": média " + med + " — " + a["status"])
-            return _r("\n".join(linhas), "", [arq],
-                      dados={"anos": anos, "eh_perfil": bool(acima)})
-        # Fallback: documento sem tabela por ano, só o veredito
-        m = re.search(r"(acima\s*do\s*limiar|abaixo\s*do\s*limiar|limiar[:\s]+(?:acima|abaixo)|(?:acima|abaixo)[^.\n]{0,50}limiar)",
-                      texto, re.IGNORECASE)
-        if m:
-            eh = "acima" in m.group(1).lower()
-            return _r(("É PERFIL — " if eh else "Não é perfil — ") + m.group(1).strip() + " (sem detalhe por ano)",
-                      _trecho(texto, m.start(), m.end()), [arq], dados={"eh_perfil": eh})
-    return _r()
+    registros, arquivos, ignorados = [], [], []
+    for arq in _varrer_pasta(raiz, elem['pasta'], {'.xlsx','.pdf','.txt'}):
+        encontrados = []
+        if Path(arq).suffix.lower() == '.xlsx':
+            import openpyxl
+            try:
+                with_workbook = openpyxl.load_workbook(arq,read_only=True,data_only=True)
+                for sh in with_workbook:
+                    cab = None
+                    for numero, row in enumerate(sh.values,1):
+                        nomes = [_normalizar(str(x or '')) for x in row]
+                        if 'ano' in nomes and 'status' in nomes and any('media' in x for x in nomes):
+                            cab = (nomes.index('ano'),next(i for i,x in enumerate(nomes) if 'media' in x),nomes.index('status'))
+                            continue
+                        if cab:
+                            ia, im, ist = cab
+                            ano = str(row[ia] or '')
+                            status = _normalizar(str(row[ist] or ''))
+                            media = row[im]
+                            if re.fullmatch(r'(?:19|20)\d{2}',ano) and status in ('acima do limiar','abaixo do limiar','acima','abaixo') and isinstance(media,(int,float)):
+                                encontrados.append({'ano':ano,'media':media,'status':'ACIMA' if status.startswith('acima') else 'ABAIXO','arquivo':arq,'planilha':sh.title,'linha':numero,'trecho':str(row)})
+                with_workbook.close()
+            except Exception as e:
+                ignorados.append({'arquivo':arq,'motivo':str(e)})
+        elif 'perfil' in _normalizar(os.path.basename(arq)):
+            texto = extrair_texto(arq)
+            encontrados = [{**x,'arquivo':arq,'trecho':texto[:2000]} for x in _parse_perfil(texto)]
+        if encontrados:
+            registros.extend(encontrados);arquivos.append(arq)
+    por_ano = {}
+    for x in registros: por_ano.setdefault(x['ano'],set()).add(x['status'])
+    conflitos = [ano for ano,sts in por_ano.items() if len(sts)>1]
+    eh = any(x['status']=='ACIMA' for x in registros) if registros and not conflitos else None
+    valor = ('É PERFIL' if eh else 'Não é perfil') if eh is not None else 'Inconclusivo — sem veredito confiável ou documentos conflitantes'
+    linhas = [valor] + [f"{x['ano']}: média {_fmt_num(x['media']) if x['media'] is not None else 'não identificada'} | {x['status']}" for x in registros]
+    return _r('\n'.join(linhas), arquivos=arquivos, status='ok' if eh is not None else 'inconclusivo',
+              dados={'eh_perfil':eh,'anos':registros,'conflitos':conflitos,'ignorados':ignorados,'evidencias':registros})
 
 
 # ── Faturamento: total por ano + média ───────────────────────────────────────
@@ -826,14 +934,10 @@ _RE_TOTAL_ARQ = [
 
 
 def _ano_do_arquivo(caminho: str, texto: str):
-    m = re.search(r"(?<!\d)((?:19|20)\d{2})(?!\d)", os.path.basename(caminho))
-    if m:
-        return m.group(1)
-    m = re.search(r"(?:ano[\s\-]*calend[aá]rio|exerc[ií]cio|ano)\D{0,15}((?:19|20)\d{2})", texto, re.IGNORECASE)
-    if m:
-        return m.group(1)
-    m = re.search(r"(?<!\d)((?:19|20)\d{2})(?!\d)", texto)
-    return m.group(1) if m else None
+    anos_nome = set(re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", os.path.basename(caminho)))
+    anos_texto = set(re.findall(r"(?:ano[\s-]*calend[aá]rio|exerc[ií]cio|\bano)\D{0,15}((?:19|20)\d{2})", texto, re.I))
+    anos = anos_nome | anos_texto
+    return next(iter(anos)) if len(anos) == 1 else None
 
 
 def _proc_faturamento(raiz, elem, ctx):
@@ -850,17 +954,43 @@ def _proc_faturamento(raiz, elem, ctx):
         por_ano[ano] = valor
     usados: list[str] = []
     for arq in arquivos:
+        if Path(arq).suffix.lower() == '.xlsx':
+            import openpyxl
+            try:
+                wb = openpyxl.load_workbook(arq,read_only=True,data_only=True)
+                for sh in wb:
+                    cab = None
+                    for numero,row in enumerate(sh.values,1):
+                        nomes = [_normalizar(str(x or '')) for x in row]
+                        if 'ano' in nomes:
+                            cols = [i for i,x in enumerate(nomes) if x in ('faturamento','faturamento anual','receita bruta','receita anual','faturamento total')]
+                            cab = (nomes.index('ano'),cols[0]) if len(cols)==1 else None
+                            continue
+                        if cab:
+                            ano = str(row[cab[0]] or '')
+                            v = row[cab[1]]
+                            valor = float(v) if isinstance(v,(int,float)) else _brl(str(v))
+                            if re.fullmatch(r'(?:19|20)\d{2}',ano) and valor is not None and valor >= 0:
+                                registrar(ano,valor,arq,f'{sh.title}!linha {numero}: {row}')
+                                if arq not in usados: usados.append(arq)
+                wb.close()
+            except Exception as e:
+                _log(f'[faturamento] planilha não lida: {e}')
+            continue
         texto = extrair_texto(arq)
-
+        if re.search(r"DARF|Per[ií]odo Apura[çc][aã]o|SOMA VALOR ORIGINAL|M[ÉE]DIA.*DOCS", texto, re.I):
+            continue  # arrecadação e DCTF não representam receita anual
         # Um arquivo com várias linhas "ANO ... VALOR"
         linhas_ano = re.findall(r"(?m)^\s*((?:19|20)\d{2})\D{1,40}?(" + _NUM + r")\s*$", texto)
-        if len(linhas_ano) >= 2:
+        if linhas_ano and re.search(r"faturamento|receita", texto, re.I):
             for ano, v in linhas_ano:
                 if _brl(v) is not None:
                     registrar(ano, _brl(v), arq, f"{ano}: {v}")
             usados.append(arq)
             continue
 
+        if re.search(r"(?:faturamento|receita)\s+mensal|(?:janeiro|fevereiro|marco|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+(?:de\s+)?20\d{2}", texto, re.I):
+            continue
         total = None
         for p in _RE_TOTAL_ARQ:
             m = re.search(p, texto, re.IGNORECASE)
@@ -869,12 +999,14 @@ def _proc_faturamento(raiz, elem, ctx):
                 break
         if total is None:
             continue
-        ano = _ano_do_arquivo(arq, texto) or Path(arq).stem
+        ano = _ano_do_arquivo(arq, texto)
+        if not ano:
+            continue
         registrar(ano, total, arq, m.group(0))
         usados.append(arq)
 
     if not por_ano:
-        return _r(arquivos=arquivos[:1], status="sem_dado")
+        return _r(arquivos=arquivos, status="sem_dado", dados={"motivo":"Não foi possível identificar totais anuais confiáveis; não é faturamento zero."})
 
     ano_atual = datetime.now().year
     fechados = {a:v for a,v in por_ano.items() if str(a).isdigit() and int(a) < ano_atual and a not in conflitos}
