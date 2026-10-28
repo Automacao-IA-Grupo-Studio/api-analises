@@ -49,6 +49,28 @@ class Regras(unittest.TestCase):
             r=a._proc_qsa('',e,{})
             self.assertEqual([x['tipo'] for x in r['dados']['socios']],['CPF','CNPJ'])
             self.assertEqual(len(r['dados']['evidencias']),2)
+            self.assertIs(r['dados']['eh_perfil'], False)
+
+    def test_family_todos_cpf_e_sem_socios(self):
+        e=next(e for e in a.ELEMENTOS if e['id']=='socios')
+        for texto, esperado in [
+            ('Sócios e Administradores\n123.456.789-00 MARIA SILVA\n987.654.321-00 JOAO SILVA', True),
+            ('Sócios e Administradores\n22.222.222/0001-22 EMPRESA SOCIA', False),
+            ('Sócios e Administradores\nNome ilegível', None),
+            ('CNPJ: 11.111.111/0001-11', None),
+        ]:
+            with self.subTest(texto=texto), patch.object(a,'_varrer_pasta',return_value=['fiscal.pdf']), patch.object(a,'extrair_texto',return_value=texto):
+                r=a._proc_qsa('',e,{})
+                self.assertIs(r['dados']['eh_perfil'], esperado)
+
+    def test_family_cnpj_em_outro_arquivo(self):
+        e=next(e for e in a.ELEMENTOS if e['id']=='socios')
+        textos={'a': 'Sócios e Administradores\n123.456.789-00 MARIA SILVA',
+                'b': 'Sócios e Administradores\n22.222.222/0001-22 EMPRESA SOCIA'}
+        with patch.object(a,'_varrer_pasta',return_value=list(textos)), patch.object(a,'extrair_texto',side_effect=textos.get):
+            r=a._proc_qsa('',e,{})
+            self.assertIs(r['dados']['eh_perfil'], False)
+            self.assertEqual(r['arquivos'], ['a','b'])
 
     def test_simples_historico(self):
         e=next(e for e in a.ELEMENTOS if e['id']=='simples_nacional')

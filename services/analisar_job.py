@@ -795,8 +795,14 @@ def _proc_qsa(raiz, elem, ctx):
             evidencias.append({"arquivo": arq, "trecho": linha})
             if arq not in arquivos:
                 arquivos.append(arq)
+    # Classificação comercial por tipo de documento, sem inferir parentesco.
+    eh_perfil = all(x["tipo"] == "CPF" for x in socios) if socios else None
+    motivo = ("Todos os sócios identificados são CPF." if eh_perfil is True else
+              "Há pelo menos um sócio CNPJ." if eh_perfil is False else
+              "Nenhum sócio com CPF/CNPJ identificado; classificação inconclusiva.")
     return _r("\n".join(f"{x['nome']} | {x['tipo']}: {x['documento']}" for x in socios), arquivos=arquivos,
-              dados={"socios": socios, "evidencias": evidencias, "observacao": "Somente vínculos identificados na seção de sócios; não infere parentesco."})
+              dados={"socios": socios, "evidencias": evidencias, "eh_perfil": eh_perfil,
+                     "motivo": motivo, "observacao": "Somente vínculos identificados na seção de sócios; não infere parentesco."})
 
 
 # ── Regularize ───────────────────────────────────────────────────────────────

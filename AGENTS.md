@@ -275,7 +275,7 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - Detalhes mostram dados extraídos; evidências mostram caminhos de origem, trechos e valores. Ausência de dado não significa negativa. A maioria dos campos usa o primeiro documento reconhecido; não há escolha automática pelo mais recente. OCR pode falhar e requer conferência.
 - Checklist: sem contrato e com Perfil Transação. Fastpass inconclusivo não gera reprovação de faturamento baixo.
 
-- Tags do relatório: azul = encontrado; laranja = não encontrado. Classificação separada: verde = é perfil; vermelho = não é perfil; laranja = inconclusivo. Encontrar sócios não comprova Perfil Family; sem critério de classificação definido, fica inconclusivo.
+- Tags do relatório: azul = encontrado; laranja = não encontrado. Classificação separada: verde = é perfil; vermelho = não é perfil; laranja = inconclusivo. Perfil Family: todos os sócios identificados com CPF = é perfil; ao menos um sócio CNPJ = não é perfil. Sem sócios com CPF/CNPJ identificados = inconclusivo. A classificação comercial não infere parentesco.
 
 ## Robustez validada com documentos (2026-10-27)
 
