@@ -141,4 +141,30 @@ class Robustez(unittest.TestCase):
             achados=list(a._varrer_pasta(tmp,['B - Documentos','5 - Cliente','16 - CNPJ'],{'.pdf'}))
             self.assertEqual([Path(x).name for x in achados],['CNPJ MATRIZ.pdf'])
 
+
+    def test_consolidado_blocos_e_exclusao_sped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp)/'B - Documentos'/'1 - Contábil'/'5 - ECF';d.mkdir(parents=True)
+            texto = 'TOTAL CONSOLIDADO (SOMA): 1.230,00\nFAT MEDIO: 307,50\n'
+            for ano,total,tipo in [(2025,'200,00','ARQUIVO'),(2024,'100,00','ARQUIVO'),(2026,'900,00','ANO PIS/COFINS'),(2023,'30,00','ANO PIS/COFINS')]:
+                texto += f'ARQUIVO: SPEDECF-origem-{ano}.txt\nANO: {ano}\nLINHAS SOMADAS:\nLinha 1 Valor 9.999,00\nTOTAL DO {tipo}: {total}\n'
+            (d/'consolidado.txt').write_text(texto)
+            (d/'SpEdECF-2025.txt').write_text('TOTAL DO ARQUIVO: 999.999,00')
+            original=a._extrair_texto_raw
+            with patch.object(a,'_extrair_texto_raw', wraps=original) as ler:
+                r=a._proc_faturamento(tmp,self.elem('faturamento'),{})
+                self.assertTrue(all('sped' not in Path(c.args[0]).name.lower() for c in ler.call_args_list))
+            self.assertEqual(r['dados']['por_ano'],{'2023':30,'2024':100,'2025':200,'2026':900})
+            self.assertEqual(r['dados']['media'],110)
+            self.assertEqual(r['dados']['anos_media'],['2023','2024','2025'])
+            self.assertEqual(len(r['dados']['evidencias']),4)
+
+    def test_bloco_sem_total_nao_usa_consolidado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp)/'B - Documentos'/'1 - Contábil'/'5 - ECF';d.mkdir(parents=True)
+            (d/'faturamento.txt').write_text('ANO: 2025\nTOTAL CONSOLIDADO: 9.000,00')
+            r=a._proc_faturamento(tmp,self.elem('faturamento'),{})
+            self.assertEqual(r['status'],'sem_dado')
+            self.assertFalse(r['valor'])
+
 if __name__=='__main__': unittest.main()

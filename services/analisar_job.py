@@ -175,6 +175,7 @@ ELEMENTOS: list[dict] = [
         "id": "faturamento",
         "categoria": "Faturamento",
         "campo": "Faturamento por Ano",
+        "arquivo_nao_contem": ["SPED"],
         "descricao": "Total por ano (arquivos ECF) + média dos anos",
         "pasta": ["B - Documentos", "1 - Contábil", "5 - ECF"],
 
@@ -945,7 +946,7 @@ def _ano_do_arquivo(caminho: str, texto: str):
 
 
 def _proc_faturamento(raiz, elem, ctx):
-    arquivos = encontrar_arquivos(raiz, elem)
+    arquivos = [arq for arq in encontrar_arquivos(raiz, elem) if "sped" not in _normalizar(os.path.basename(arq))]
     if not arquivos:
         return _r()
     por_ano: dict[str, float] = {}
@@ -984,6 +985,22 @@ def _proc_faturamento(raiz, elem, ctx):
         texto = extrair_texto(arq)
         if re.search(r"DARF|Per[ií]odo Apura[çc][aã]o|SOMA VALOR ORIGINAL|M[ÉE]DIA.*DOCS", texto, re.I):
             continue  # arrecadação e DCTF não representam receita anual
+        # Consolidado: cada ANO pertence ao seu bloco ARQUIVO/ANO e ao total
+        # daquele bloco. Não usar TOTAL CONSOLIDADO, FAT MEDIO nem somar linhas.
+        blocos = list(re.finditer(r"(?mi)^[ \t]*ANO[ \t]*:[ \t]*((?:19|20)\d{2})[ \t]*$", texto))
+        if blocos:
+            for i, inicio in enumerate(blocos):
+                fim = blocos[i+1].start() if i+1 < len(blocos) else len(texto)
+                bloco = texto[inicio.end():fim]
+                totais = list(re.finditer(r"(?mi)^[ \t]*TOTAL[ \t]+(?:DO[ \t]+ARQUIVO|DO[ \t]+ANO(?:[ \t]+PIS[ /-]*COFINS)?)[ \t]*:[ \t]*(?:R\$[ \t]*)?(" + _NUM + r")[ \t]*$", bloco))
+                for total in totais:
+                    valor = _brl(total.group(1))
+                    if valor is not None:
+                        registrar(inicio.group(1), valor, arq, inicio.group(0) + "\n" + total.group(0))
+                        if arq not in usados: usados.append(arq)
+            # Se os blocos não possuem total anual reconhecível, não pegar o
+            # total global como se fosse o faturamento de um dos anos.
+            continue
         # Um arquivo com várias linhas "ANO ... VALOR"
         linhas_ano = re.findall(r"(?m)^\s*((?:19|20)\d{2})\D{1,40}?(" + _NUM + r")\s*$", texto)
         if linhas_ano and re.search(r"faturamento|receita", texto, re.I):

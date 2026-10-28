@@ -290,3 +290,11 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - Testes sintéticos versionados não contêm os documentos privados enviados. Conferência adicional local com os arquivos reais verifica valores esperados e hashes SHA-256 inalterados das origens. OCR/novos layouts ainda podem exigir conferência humana; não há garantia de erro zero.
 
 - Exclusão antecipada: qualquer arquivo cujo nome contenha filial (sem diferenciar maiúsculas/minúsculas) é ignorado antes de abertura, extração de texto e OCR, em todos os perfis e nos dois modos.
+
+## Faturamento consolidado e SPED (2026-10-28)
+
+- Na pasta B - Documentos/1 - Contábil/5 - ECF, ignora arquivos com SPED no nome antes de abrir, independentemente de caixa. Não exige FATURAMENTO no nome: consolidado e outros nomes são candidatos. Preserva exclusão global de filial.
+- A menção a arquivos SPED dentro do texto de um consolidado é evidência, não motivo para descartar o consolidado. Não abre os arquivos citados.
+- Consolidados com vários blocos ANO: associam cada ano ao TOTAL DO ARQUIVO ou TOTAL DO ANO PIS/COFINS daquele bloco. Não usam TOTAL CONSOLIDADO, FAT MEDIO ou a média previamente calculada no arquivo.
+- Exibe todos os anos extraídos; calcula de novo a média aritmética dos anos anteriores ao ano corrente. Em 2026, mostra 2026 mas exclui esse ano da média. Mantém proteção contra valores divergentes para o mesmo ano fechado.
+- Encontrado para faturamento exige pelo menos um valor anual extraído no resultado; existência de arquivo sem valores nunca gera tag azul. Um total anual zero é um valor válido. Reanalisar jobs antigos para atualizar resultados salvos.
