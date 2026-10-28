@@ -47,6 +47,10 @@ function createApp({ baseDir, pyScriptPath, dbFile, frontendDir }) {
   app.post('/api/logs/limpar', (req, res) => { logger.limparTela(); res.json({ ok: true }); });
 
 
+  const queueRouter = express.Router();
+  require('./jobQueue').mountQueue(queueRouter, controller);
+  app.use('/api', queueRouter);
+
   app.get('/api/jobs', controller.listarJobs);
   app.get('/api/jobs/:id', controller.obterJob);
   app.post('/api/jobs/analisar', controller.analisarJob);

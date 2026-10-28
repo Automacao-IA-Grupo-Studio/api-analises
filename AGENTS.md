@@ -298,3 +298,12 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - Consolidados com vários blocos ANO: associam cada ano ao TOTAL DO ARQUIVO ou TOTAL DO ANO PIS/COFINS daquele bloco. Não usam TOTAL CONSOLIDADO, FAT MEDIO ou a média previamente calculada no arquivo.
 - Exibe todos os anos extraídos; calcula de novo a média aritmética dos anos anteriores ao ano corrente. Em 2026, mostra 2026 mas exclui esse ano da média. Mantém proteção contra valores divergentes para o mesmo ano fechado.
 - Encontrado para faturamento exige pelo menos um valor anual extraído no resultado; existência de arquivo sem valores nunca gera tag azul. Um total anual zero é um valor válido. Reanalisar jobs antigos para atualizar resultados salvos.
+
+## Seleção e fila de jobs (2026-10-28)
+
+- API e Desktop usam `desktop-gui/server/jobQueue.js`, incluído pelo build Desktop ao copiar server/.
+- GET /api/pastas?relative= lista somente diretórios; realpath e contenção na raiz bloqueiam travessia e links para fora. Não há operações de escrita na origem.
+- JOBS_ROOT configura a raiz (padrão \\studiofiscal\Temporarios); JOBS_CONCURRENCY define 1–4 análises simultâneas, padrão 2. No Desktop definir as variáveis no ambiente do aplicativo.
+- POST /api/fila recebe jobs [{relative}] ou [{pasta_raiz}] dentro da raiz e retorna 202. O nome do job vem da pasta. GET /api/fila acompanha status fila/processando/concluido/erro. Pastas ativas não duplicam. Falhas individuais não interrompem a fila; falha de persistência é erro.
+- Fila em memória do processo, histórico limitado a 1000 itens; reinício perde pendências. Resultados continuam persistidos pelos controllers habituais. Usar um único processo API (sem cluster PM2). Desktop precisa permanecer aberto.
+- A interface usa fila tanto para seleção múltipla quanto entrada manual. O endpoint legado /api/jobs/analisar permanece síncrono para compatibilidade com integrações.

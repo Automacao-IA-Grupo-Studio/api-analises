@@ -627,15 +627,11 @@
         <div class="card-header-icon">🔍</div>
         <div>
           <div class="card-title">Analisar Job</div>
-          <div class="card-subtitle">Dispara análise de um diretório de cliente</div>
+          <div class="card-subtitle">Adicione uma pasta à fila de processamento</div>
         </div>
       </div>
       <div class="card-body">
         <form id="analyzeForm">
-          <div class="field">
-            <label>Número / Nome do Job</label>
-            <input type="text" id="numJobInput" placeholder="001 - EMPRESA EXEMPLO" required>
-          </div>
           <div class="field">
             <label>Caminho do Diretório</label>
             <input type="text" id="pastaInput"
@@ -657,6 +653,22 @@
         </form>
       </div>
     </div>
+
+    <div class="card" style="margin-top:14px"><div class="card-body">
+      <h3>Selecionar jobs na rede</h3>
+      <p class="hint">Navegação somente leitura. Selecione as pastas e adicione à fila.</p>
+      <button type="button" class="btn" id="openFolders">Abrir / atualizar pastas</button>
+      <button type="button" class="btn" id="upFolder">Voltar</button>
+      <p id="folderPath" style="overflow-wrap:anywhere"></p>
+      <input id="folderSearch" placeholder="Buscar número ou nome" aria-label="Buscar pastas">
+      <div id="folderList" style="max-height:320px;overflow:auto;margin:12px 0"></div>
+      <button type="button" class="btn btn-primary" id="enqueueSelected">Adicionar selecionados à fila (0)</button>
+      <p id="folderMessage" role="status"></p>
+    </div></div>
+    <div class="card" style="margin-top:14px"><div class="card-body">
+      <h3>Fila de processamento</h3><p id="queueInfo" class="hint"></p>
+      <div id="queueList" style="max-height:360px;overflow:auto" aria-live="polite"></div>
+    </div></div>
 
     <!-- Info rápida da API -->
     <div class="card" style="margin-top:14px">
@@ -888,74 +900,78 @@ function filtrarJobs(q) {
 }
 
 // ── Formulário de análise ───────────────────────────────────────────────────
+const selectedFolders = new Set();
+let folderData = { relative: '', folders: [] };
+let queueSignature = '';
+async function queueRequest(url, options) {
+  const response = await fetch(`${API}/api/${url}`, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Falha na solicitação');
+  return data;
+}
+function drawFolders() {
+  const host = document.getElementById('folderList'); host.replaceChildren();
+  const query = document.getElementById('folderSearch').value.toLowerCase();
+  for (const folder of folderData.folders.filter(x => x.name.toLowerCase().includes(query))) {
+    const row = document.createElement('div'); row.style.marginBottom = '8px';
+    const label = document.createElement('label');
+    const check = document.createElement('input'); check.type = 'checkbox'; check.checked = selectedFolders.has(folder.relative);
+    check.onchange = () => { check.checked ? selectedFolders.add(folder.relative) : selectedFolders.delete(folder.relative); updateSelection(); };
+    label.append(check, document.createTextNode(' ' + folder.name));
+    const open = document.createElement('button'); open.type = 'button'; open.textContent = 'Abrir'; open.className = 'btn'; open.onclick = () => loadFolders(folder.relative);
+    row.append(label, open); host.append(row);
+  }
+  if (!host.children.length) host.textContent = 'Nenhuma pasta encontrada.';
+}
+function updateSelection() { document.getElementById('enqueueSelected').textContent = `Adicionar selecionados à fila (${selectedFolders.size})`; }
+async function loadFolders(relative = '') {
+  try {
+    folderData = await queueRequest('pastas?relative=' + encodeURIComponent(relative));
+    document.getElementById('folderPath').textContent = folderData.root + (folderData.relative ? ' / ' + folderData.relative : '');
+    document.getElementById('folderSearch').value = ''; drawFolders();
+    document.getElementById('folderMessage').textContent = '';
+  } catch (e) { document.getElementById('folderMessage').textContent = e.message; }
+}
+document.getElementById('openFolders').onclick = () => loadFolders(folderData.relative);
+document.getElementById('upFolder').onclick = () => loadFolders(folderData.relative.split(/[\\/]/).slice(0,-1).join('/'));
+document.getElementById('folderSearch').oninput = drawFolders;
+async function addJobs(jobs) {
+  await queueRequest('fila', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({jobs}) });
+  await refreshQueue();
+}
+document.getElementById('enqueueSelected').onclick = async () => {
+  const btn = document.getElementById('enqueueSelected'); btn.disabled = true;
+  try {
+    await addJobs([...selectedFolders].map(relative => ({relative})));
+    selectedFolders.clear(); updateSelection(); drawFolders();
+    document.getElementById('folderMessage').textContent = 'Jobs adicionados. Acompanhe a fila abaixo.';
+  } catch(e) { document.getElementById('folderMessage').textContent = e.message; }
+  finally { btn.disabled = false; }
+};
+document.getElementById('analyzeBtnText').textContent = 'Adicionar à fila';
 document.getElementById('analyzeForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const num_job    = document.getElementById('numJobInput').value.trim();
-  const pasta_raiz = document.getElementById('pastaInput').value.trim();
-  if (!num_job || !pasta_raiz) return;
-
-  const btn      = document.getElementById('analyzeBtn');
-  const btnText  = document.getElementById('analyzeBtnText');
-  const btnIcon  = document.getElementById('analyzeBtnIcon');
-  const progress = document.getElementById('progressWrap');
-  const msg      = document.getElementById('analyzeMsg');
-  const alertBox = document.getElementById('analyzeAlert');
-
-  btn.disabled = true;
-  btnText.textContent = 'Analisando…';
-  btnIcon.textContent = '⏳';
-  progress.hidden = false;
-  msg.textContent = 'Buscando arquivos e extraindo dados…';
-  alertBox.hidden = true;
-
+  const btn = document.getElementById('analyzeBtn'); btn.disabled = true;
+  const msg = document.getElementById('analyzeMsg');
   try {
-    const r = await fetch(`${API}/api/jobs/analisar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ num_job, pasta_raiz }),
-    });
-
-    const data = await r.json();
-
-    if (!r.ok) {
-      const err = new Error(data.error || `HTTP ${r.status}`);
-      err._raw = JSON.stringify(data);
-      throw err;
-    }
-
-    const job = data.job || {};
-    const ok  = (job.raw_resultado?.resumo?.encontrados) ?? '—';
-    const tot = (job.raw_resultado?.resumo?.total)       ?? '—';
-
-    alertBox.className = 'alert alert-ok';
-    alertBox.textContent = `✔  Análise concluída — ${ok}/${tot} campos encontrados`;
-    alertBox.hidden = false;
-    msg.textContent = '';
-    carregarJobs();
-
-  } catch (err) {
-    alertBox.className = 'alert alert-err';
-    alertBox.hidden = false;
-    msg.textContent = '';
-    // Tenta pegar detalhes do stderr do Python da resposta da API
-    try {
-      const errData = JSON.parse(err._raw || '{}');
-      const detalhe = errData.detalhes || errData.raw || '';
-      if (detalhe) {
-        alertBox.innerHTML = `<div><strong>✕ ${err.message}</strong></div><pre style="margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:rgba(0,0,0,.08);padding:8px;border-radius:4px;max-height:200px;overflow:auto">${detalhe.replace(/</g,'&lt;')}</pre>`;
-      } else {
-        alertBox.textContent = `✕  ${err.message}`;
-      }
-    } catch {
-      alertBox.textContent = `✕  ${err.message}`;
-    }
-  } finally {
-    btn.disabled = false;
-    btnText.textContent = 'Analisar Job';
-    btnIcon.textContent = '▶';
-    progress.hidden = true;
-  }
+    await addJobs([{ pasta_raiz: document.getElementById('pastaInput').value.trim() }]);
+    msg.textContent = 'Job adicionado à fila. O nome será o da pasta selecionada.';
+  } catch(e) { msg.textContent = e.message; }
+  finally { btn.disabled = false; }
 });
+async function refreshQueue() {
+  try {
+    const data = await queueRequest('fila');
+    document.getElementById('queueInfo').textContent = `Até ${data.concurrency} jobs simultâneos. A fila exige o servidor aberto e é reiniciada com ele.`;
+    const signature = JSON.stringify(data.items);
+    if (signature === queueSignature) return;
+    queueSignature = signature;
+    const labels = {fila:'Na fila',processando:'Processando',concluido:'Concluído',erro:'Erro'};
+    document.getElementById('queueList').innerHTML = data.items.slice().reverse().map(x => `<div style="padding:8px 0;border-bottom:1px solid var(--border)"><strong>${esc(x.num_job)}</strong><br><span class="badge ${x.status === 'concluido' ? 'badge-ok' : x.status === 'erro' ? 'badge-err' : 'badge-found'}">${labels[x.status]}</span>${x.error ? '<p>'+esc(x.error)+'</p>' : ''}</div>`).join('') || 'Nenhum job na fila.';
+    carregarJobs();
+  } catch(e) { document.getElementById('queueInfo').textContent = 'Não foi possível atualizar a fila: ' + e.message; }
+}
+(async function pollQueue() { await refreshQueue(); setTimeout(pollQueue, 2500); })();
 
 // ── Modal de detalhes ───────────────────────────────────────────────────────
 async function abrirJob(id) {

@@ -101,7 +101,9 @@ exports.analisarJob = async (req, res) => {
     process.stdout.write(`[analisador] ${line}`);  // repassa logs do analisador
   });
 
+  let spawnFailed = false;
   python.on('error', err => {
+    spawnFailed = true;
     console.error('[spawn] Erro ao iniciar analisador:', err.message);
     return res.status(500).json({
       error: 'Não foi possível iniciar o analisador de documentos',
@@ -110,6 +112,7 @@ exports.analisarJob = async (req, res) => {
   });
 
   python.on('close', async code => {
+    if (spawnFailed) return;
     // Parse do JSON retornado pelo script
     // Ignora qualquer linha de warning antes do JSON (ex: warnings do pymupdf)
     let analise;

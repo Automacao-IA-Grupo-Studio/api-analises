@@ -1,6 +1,8 @@
 const router     = require('express').Router();
 const controller = require('../controllers/job_pro.controller');
 
+require('../desktop-gui/server/jobQueue').mountQueue(router, controller);
+
 // GET  /api/jobs          — lista todos os jobs analisados
 router.get('/jobs', controller.listarJobs);
 
