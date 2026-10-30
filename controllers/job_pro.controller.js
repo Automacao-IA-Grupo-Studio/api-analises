@@ -2,6 +2,8 @@ const { spawn }  = require('child_process');
 const path        = require('path');
 const fs          = require('fs');
 const { getPool } = require('../db/connection');
+// Logger compartilhado com o Modo Desktop (buffer em memória + data/logs/app.log).
+const logger      = require('../desktop-gui/server/logger');
 
 const DATA_DIR    = path.join(baseDir(), 'data', 'jobs');
 const PYTHON_BIN   = process.env.PYTHON_BIN || caminhoAnalisadorPadrao();
@@ -47,7 +49,7 @@ exports.listarJobs = async (req, res) => {
     `);
     res.json({ total: rows.length, jobs: rows });
   } catch (err) {
-    console.error('[listarJobs]', err);
+    logger.erro('[listarJobs]', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -65,7 +67,7 @@ exports.obterJob = async (req, res) => {
     }
     res.json(row);
   } catch (err) {
-    console.error('[obterJob]', err);
+    logger.erro('[obterJob]', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -83,7 +85,9 @@ exports.analisarJob = async (req, res) => {
     });
   }
 
-  console.log(`\n[analisar] Iniciando: ${num_job} — ${pasta_raiz}`);
+  const inicio  = Date.now();
+  const duracao = () => logger.formatarDuracao(Date.now() - inicio);
+  logger.info(`[analisar] Iniciando: job="${num_job}" pasta="${pasta_raiz}"`);
 
   // Executa o analisador (exe standalone em produção, ou "python3 script.py" em dev)
   const python = spawn(PYTHON_BIN, [...SCRIPT_ARGS_PREFIX, pasta_raiz], {
@@ -94,17 +98,20 @@ exports.analisarJob = async (req, res) => {
   let stdout = '';
   let stderr = '';
 
-  python.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); });
+  // setEncoding usa um decoder que não corta caractere multibyte no meio.
+  python.stdout.setEncoding('utf8');
+  python.stderr.setEncoding('utf8');
+  python.stdout.on('data', chunk => { stdout += chunk; });
   python.stderr.on('data', chunk => {
-    const line = chunk.toString('utf8');
-    stderr += line;
-    process.stdout.write(`[analisador] ${line}`);  // repassa logs do analisador
+    stderr += chunk;
+    // repassa o progresso do analisador; o nome do job separa análises simultâneas
+    chunk.split(/\r?\n/).filter(l => l.trim()).forEach(l => logger.info(`[analisador ${num_job}] ${l}`));
   });
 
   let spawnFailed = false;
   python.on('error', err => {
     spawnFailed = true;
-    console.error('[spawn] Erro ao iniciar analisador:', err.message);
+    logger.erro(`[spawn] Não foi possível iniciar o analisador (${PYTHON_BIN}): ${err.message}`);
     return res.status(500).json({
       error: 'Não foi possível iniciar o analisador de documentos',
       detalhes: err.message,
@@ -113,6 +120,7 @@ exports.analisarJob = async (req, res) => {
 
   python.on('close', async code => {
     if (spawnFailed) return;
+    logger.info(`[analisar] Analisador terminou: job="${num_job}" exit=${code} | duração=${duracao()}`);
     // Parse do JSON retornado pelo script
     // Ignora qualquer linha de warning antes do JSON (ex: warnings do pymupdf)
     let analise;
@@ -124,13 +132,13 @@ exports.analisarJob = async (req, res) => {
     } catch (e) {
       // Não veio JSON válido: aí sim é uma falha "crua" (crash, script não encontrado etc.)
       if (code !== 0) {
-        console.error(`[analisar] Analisador saiu com código ${code}`);
+        logger.erro(`[analisar] Falhou: job="${num_job}" (exit ${code}) e a saída não é JSON | duração=${duracao()}\n--- stderr (final) ---\n${stderr.slice(-2000)}`);
         return res.status(500).json({
           error: `Análise falhou (exit ${code})`,
           detalhes: stderr.slice(-1000) || stdout.slice(-1000),
         });
       }
-      console.error('[analisar] JSON inválido:', stdout.slice(0, 500));
+      logger.erro(`[analisar] JSON inválido: job="${num_job}": ${stdout.slice(0, 500)}`);
       return res.status(500).json({
         error: 'Resposta do analisador não é JSON válido',
         raw: stdout.slice(0, 500),
@@ -141,10 +149,12 @@ exports.analisarJob = async (req, res) => {
     // de erro amigável (ex.: "Diretório não encontrado"). Nesse caso usamos
     // a mensagem dele em vez de um erro genérico.
     if (analise.erro) {
+      logger.erro(`[analisar] Analisador devolveu erro: job="${num_job}": ${analise.erro} | duração=${duracao()}` +
+                  (analise.traceback ? `\n--- traceback do Python ---\n${analise.traceback}` : ''));
       return res.status(422).json({ error: analise.erro });
     }
     if (code !== 0) {
-      console.error(`[analisar] Analisador saiu com código ${code}`);
+      logger.erro(`[analisar] Falhou: job="${num_job}" (exit ${code}) | duração=${duracao()}\n--- stderr (final) ---\n${stderr.slice(-2000)}`);
       return res.status(500).json({
         error: `Análise falhou (exit ${code})`,
         detalhes: stderr.slice(-1000),
@@ -158,9 +168,9 @@ exports.analisarJob = async (req, res) => {
       const fname    = `${num_job.replace(/[^\w\-]/g, '_')}_${ts}.json`;
       const filepath = path.join(DATA_DIR, fname);
       fs.writeFileSync(filepath, JSON.stringify(analise, null, 2), 'utf8');
-      console.log(`[analisar] Sidecar salvo: ${filepath}`);
+      logger.info(`[analisar] Sidecar salvo: ${filepath}`);
     } catch (e) {
-      console.warn('[analisar] Não foi possível salvar sidecar:', e.message);
+      logger.aviso(`[analisar] Não foi possível salvar sidecar: ${e.message}`);
     }
 
     // ── Extrai campos do resultado ─────────────────────────────────────────
@@ -252,14 +262,15 @@ exports.analisarJob = async (req, res) => {
 
       const [rows] = await pool.query('SELECT * FROM jobs_pro WHERE num_job = ?', [num_job]);
       const row = rows[0];
-      console.log(`[analisar] Salvo no banco — id: ${row?.id}`);
+      logger.info(`[analisar] Concluído e salvo: job="${num_job}" id=${row?.id} | duração=${duracao()} ` +
+                  `(${analise.resumo?.encontrados ?? '?'}/${analise.resumo?.total ?? '?'} itens encontrados)`);
 
       res.status(201).json({
         mensagem: 'Análise concluída e salva com sucesso',
         job: row || { num_job, pasta_raiz },
       });
     } catch (dbErr) {
-      console.error('[analisar] Erro ao salvar no banco:', dbErr.message);
+      logger.erro(`[analisar] Erro ao salvar no banco: job="${num_job}" | duração=${duracao()}: ${dbErr.message}`);
       // Retorna o resultado da análise mesmo sem banco
       res.status(207).json({
         mensagem: 'Análise concluída, mas não foi possível salvar no banco',

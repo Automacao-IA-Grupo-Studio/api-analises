@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Logs — Análise Desktop</title>
+<title>Logs — Studio Fiscal</title>
 <style>
   :root {
     --bg: #0f172a; --panel: #111c33; --fg: #e2e8f0; --fg-3: #94a3b8; --line: #1e2b47;
@@ -30,10 +30,11 @@
 </head>
 <body>
 <header>
-  <h1>Logs do app</h1>
+  <h1>Logs do servidor</h1>
   <label>Nível
     <select id="nivel">
       <option value="TODOS">Todos</option>
+      <option value="JOBS">Resumo dos jobs (início, fim e duração)</option>
       <option value="AVISO">Avisos + erros</option>
       <option value="ERRO">Só erros</option>
     </select>
@@ -62,6 +63,7 @@ function esc(v) { return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 
 function passaFiltro(l) {
   const nivel = document.getElementById('nivel').value;
+  if (nivel === 'JOBS' && !l.msg.startsWith('[analisar]')) return false;
   if (nivel === 'ERRO' && l.nivel !== 'ERRO') return false;
   if (nivel === 'AVISO' && l.nivel === 'INFO') return false;
   const q = document.getElementById('busca').value.trim().toLowerCase();

@@ -109,13 +109,13 @@ AnaliseDesktop.exe (Electron)
   `dist/AnaliseDesktop/` (uma PASTA — Electron não gera um único `.exe`
   portátil, gera um `.exe` principal + DLLs/recursos ao redor; copiar só o
   `.exe` sem o resto da pasta NÃO funciona).
-- **Logs (só Modo Desktop)**: `server/logger.js` (singleton) guarda as últimas
-  3000 linhas em memória e grava em `data/logs/app.log` ao lado do `.exe`
+- **Logs (os DOIS modos desde 2026-10-30)**: `server/logger.js` (singleton) guarda as últimas
+  20000 linhas em memória e grava em `data/logs/app.log` ao lado do `.exe`
   (rotaciona em 2 MB). O `controller.js` loga cada análise, cada linha de
   stderr do analisador e — importante — o **traceback do Python**, que não vai
   pra tela do usuário. `app.js` expõe `GET /api/logs?desde=<id>` e
-  `POST /api/logs/limpar`, e `frontend/logs.html` (só existe no Desktop) é a
-  tela. Fica "escondida": **Ctrl+Shift+L** ou tecla **Alt → Ferramentas → Ver
+  `POST /api/logs/limpar`, e `frontend/logs.html` é a
+  tela (o Modo API serve este mesmo arquivo em `/logs.html`, ver seção abaixo). Fica "escondida": **Ctrl+Shift+L** ou tecla **Alt → Ferramentas → Ver
   logs** (menu montado em `main.js`; a janela de logs é única). `main.js` também
   encaminha pro log: exceções do processo principal, `console.error` da tela e
   falhas de carga. Só escreve em `data/logs` — nunca nas pastas analisadas.
@@ -219,9 +219,9 @@ desktop-gui/main.js                 Modo Desktop — processo principal do Elect
 desktop-gui/server/app.js           Modo Desktop — fábrica do Express local
 desktop-gui/server/controller.js    Modo Desktop — orquestra spawn + jobStore
 desktop-gui/server/jobStore.js      Modo Desktop — "banco" local em data/jobs.json
-desktop-gui/server/logger.js        Modo Desktop — log em memória + data/logs/app.log
+desktop-gui/server/logger.js        Os DOIS modos — log em memória + data/logs/app.log
 desktop-gui/frontend/index.html     Modo Desktop — UI (cópia do frontend/index.html)
-desktop-gui/frontend/logs.html      Modo Desktop — tela de logs (Ctrl+Shift+L)
+desktop-gui/frontend/logs.html      Os DOIS modos — tela de logs (Ctrl+Shift+L)
 desktop-gui/build-win.js            Modo Desktop — gera AnaliseDesktop.exe (sem electron-packager)
 desktop-gui/tools/                  Modo Desktop — baixa/extrai o Electron (npm start e build)
 desktop-gui/package.json            Modo Desktop — deps + scripts start / build:win
@@ -307,3 +307,12 @@ Esta seção é a referência funcional exibida também no painel em Regras da a
 - POST /api/fila recebe jobs [{relative}] ou [{pasta_raiz}] dentro da raiz e retorna 202. O nome do job vem da pasta. GET /api/fila acompanha status fila/processando/concluido/erro. Pastas ativas não duplicam. Falhas individuais não interrompem a fila; falha de persistência é erro.
 - Fila em memória do processo, histórico limitado a 1000 itens; reinício perde pendências. Resultados continuam persistidos pelos controllers habituais. Usar um único processo API (sem cluster PM2). Desktop precisa permanecer aberto.
 - A interface usa fila tanto para seleção múltipla quanto entrada manual. O endpoint legado /api/jobs/analisar permanece síncrono para compatibilidade com integrações.
+
+## Logs do servidor e filtros do painel (2026-10-30)
+
+- Logs nos dois modos: `server.js` (API) e `desktop-gui/main.js` inicializam o mesmo `desktop-gui/server/logger.js`. Modo API grava em `data/logs/app.log` ao lado do projeto (ignorado pelo git); Desktop, ao lado do `.exe`. Só a pasta da aplicação recebe escrita, nunca as pastas analisadas.
+- Tela escondida: **Ctrl+Shift+L** no dashboard (ou o link quase invisível "logs" no canto inferior direito) abre `/logs.html`. No Modo API o Express serve o arquivo `desktop-gui/frontend/logs.html` e expõe `GET /api/logs?desde=<id>` e `POST /api/logs/limpar`, como no Desktop. Não há autenticação: quem acessa a API acessa os logs.
+- Cada análise registra `Iniciando`, `Analisador terminou` e `Concluído e salvo` (ou `Falhou`) com `duração=` (ex.: `20 min 03 s`), em ambos os controllers. As linhas do analisador levam o prefixo `[analisador <num_job>]` para separar análises simultâneas. Opção "Resumo dos jobs" da tela mostra só as linhas `[analisar]` (início, fim e duração).
+- `uncaughtException`/`unhandledRejection` no Modo API são logadas e o processo encerra (PM2 reinicia), preservando o comportamento anterior.
+- Cards do dashboard (`frontend/index.html` e `desktop-gui/frontend/index.html`, sempre idênticos) são clicáveis e filtram a tabela: Jobs Analisados (todos), Com Alertas, Perfil Fastpass e Perfil Previdenciário (`perfil` começando com "É PERFIL"). O mesmo teste (`FILTROS` no script) conta o card e filtra a lista, e combina com a busca por texto. Clicar de novo no card ativo, ou no chip do filtro, volta a mostrar todos. Para criar outro filtro: nova entrada em `FILTROS` e um `.stat-cell[data-filtro]`.
+- Nenhuma regra de negócio da análise foi alterada nesta mudança.

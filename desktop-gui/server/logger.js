@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const MAX_LINHAS = 3000;          // buffer em memória
+const MAX_LINHAS = 20000;         // buffer em memória (~130 linhas por job analisado)
 const MAX_ARQUIVO = 2 * 1024 * 1024; // 2 MB → rotaciona para app.log.1
 
 let linhas = [];
@@ -57,7 +57,20 @@ function registrar(nivel, partes) {
   return entrada;
 }
 
+/** Duração legível: "12,3 s" | "20 min 03 s" | "1 h 02 min". */
+function formatarDuracao(ms) {
+  const s = Math.max(0, ms) / 1000;
+  if (s < 60) return `${s.toFixed(1).replace('.', ',')} s`;
+  const total = Math.round(s);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const seg = total % 60;
+  if (h > 0) return `${h} h ${String(m).padStart(2, '0')} min`;
+  return `${m} min ${String(seg).padStart(2, '0')} s`;
+}
+
 module.exports = {
+  formatarDuracao,
   init,
   info:  (...p) => registrar('INFO', p),
   aviso: (...p) => registrar('AVISO', p),

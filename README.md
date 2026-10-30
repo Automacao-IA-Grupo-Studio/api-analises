@@ -58,6 +58,11 @@ pm2 restart ecosystem.config.js   # reiniciar depois de um git pull
 Acesse `http://localhost:3030` (ou `http://IP-DA-VM:3030` de outra máquina
 na rede).
 
+**Logs do servidor:** no dashboard, **Ctrl+Shift+L** (ou o link discreto "logs" no
+canto inferior direito) abre `/logs.html`, com timestamps, filtro por nível/texto e a
+duração de cada análise (opção "Resumo dos jobs"). Os logs também ficam em
+`data/logs/app.log` (rotaciona em 2 MB) e continuam saindo em `pm2 logs api-analises`.
+
 ## Modo 2 — App Desktop (uso individual, sem servidor)
 
 Sem API remota, sem MySQL. É um app desktop de verdade (Electron), com uma
@@ -147,3 +152,5 @@ instalar-vm.ps1 / start.ps1   firewall, tarefa agendada e start do dia a dia (Mo
 - `GET  /api/jobs/:id` — detalhes de um job (inclui resultado bruto)
 - `POST /api/jobs/analisar` — dispara uma análise
   — body: `{ "pasta_raiz": "...", "num_job": "..." }`
+- `GET  /api/logs?desde=<id>` — linhas de log novas (alimenta `/logs.html`)
+- `POST /api/logs/limpar` — limpa só a tela de logs (o arquivo em disco é mantido)

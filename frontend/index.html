@@ -146,6 +146,9 @@
     @media (max-width: 860px) {
       .layout { grid-template-columns: 1fr; padding: 16px }
     }
+    @media (max-width: 560px) {
+      .stats-row { grid-template-columns: repeat(2, 1fr) }
+    }
 
     /* ── Card ──────────────────────────────────────────────────────────────── */
     .card {
@@ -296,7 +299,7 @@
     /* ── Stats row ─────────────────────────────────────────────────────────── */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 1px;
       background: var(--border);
       border-radius: 8px;
@@ -308,6 +311,17 @@
       padding: 14px 16px;
       text-align: center;
     }
+    /* Cards que filtram a tabela de jobs ao clicar */
+    .stat-cell[data-filtro] { cursor: pointer; transition: background .12s }
+    .stat-cell[data-filtro]:hover { background: var(--bg) }
+    .stat-cell[data-filtro]:focus-visible { outline: 2px solid var(--blue-mid); outline-offset: -2px }
+    .stat-cell.ativo { box-shadow: inset 0 -3px 0 var(--blue-mid); background: var(--bg) }
+    .filtro-chip {
+      font-size: 11px; font-weight: 500; color: var(--blue-mid);
+      background: transparent; border: 1px solid var(--blue-mid); border-radius: 999px;
+      padding: 2px 10px; cursor: pointer;
+    }
+    .filtro-chip:hover { background: var(--bg) }
     .stat-num {
       font-size: 24px;
       font-weight: 700;
@@ -703,17 +717,21 @@
 <details class="card" style="margin-bottom:20px;padding:20px"><summary style="cursor:pointer;font-weight:600">Regras da análise</summary><p style="margin:12px 0;font-size:13px">Somente leitura dos documentos de origem. Nenhum arquivo de cliente pode ser criado, alterado, movido ou apagado. Resultados e logs são gravados exclusivamente na área da aplicação.</p><p style="margin:12px 0;font-size:13px">Contrato: existência de PDF em A - Contrato/1 - Contrato Studio; não valida assinatura. Procuração: em branco, definida pelo Project.</p><p style="margin:12px 0;font-size:13px">Honorários: cláusula 5.1; ignora gross up e 14,25%. Fallback próximo de honorários/remuneração exige conferência. Gross up: expressão gross up ou 14,25%. Passivo: menção textual, sem interpretação de negação.</p><p style="margin:12px 0;font-size:13px">Perfil Family: examina PDF/TXT/XLSX em B - Documentos/2 - Fiscal, a pasta do Regularize. Extrai nomes e CPF/CNPJ identificados na seção de sócios dos relatórios fiscais; mantém arquivo e trecho por vínculo. CPF/CNPJ avulso não comprova vínculo nem parentesco. Layout não reconhecido fica sem dado.</p><p style="margin:12px 0;font-size:13px">CNPJ: extrai data de abertura e CNAE principal do bloco da matriz; exige indicação explícita MATRIZ; nunca usa filial nem presume matriz pelo sufixo /0001. Se o cartão não for reconhecido, aceita a seção Dados Cadastrais da Matriz do relatório fiscal. CNAE pode ser extraído mesmo sem data.</p><p style="margin:12px 0;font-size:13px">Simples Nacional: informa situação atual e anos documentados por intervalos de opção encontrados, sem inferir histórico da situação atual. Histórico não reconhecido é explicitamente informado. Não consulta sistemas externos.</p><p style="margin:12px 0;font-size:13px">Perfil Transação: documento de capacidade de pagamento em B - Documentos/2 - Fiscal. Dívida PGFN+RFB &gt; R$ 600.000. Igual ao limite fica fora. Classificação A/B/C/D e contencioso não alteram a regra; contencioso não é somado. Sem cadastro exige evidência textual.</p><p style="margin:12px 0;font-size:13px">Perfil Previdenciário: arquivos com perfil no nome em B - Documentos/6 - Cruzamentos. Qualquer ano marcado ACIMA indica perfil; lê o veredito do documento, sem recalcular limite.</p><p style="margin:12px 0;font-size:13px">Faturamento: examina todos os TXT/PDF/XLSX em B - Documentos/1 - Contábil/5 - ECF, sem exigir FATURAMENTO no nome. Extrai totais anuais reconhecíveis. Exibe todos os anos, inclusive o corrente. Média aritmética apenas de anos anteriores ao ano corrente; em 2026, usa até 2025. Nunca soma anos para classificar. Anos não identificados não entram. Valores diferentes para um mesmo ano fechado deixam a média inconclusiva; valores iguais repetidos não duplicam o ano. Todos os valores observados e arquivos ficam nas evidências.</p><p style="margin:12px 0;font-size:13px">Perfil Fastpass: média dos anos fechados &gt; R$ 200 milhões. Todos os demais casos são inconclusivos, inclusive igualdade e ausência de dados.</p><p style="margin:12px 0;font-size:13px">Perfil Supply: média dos anos fechados &gt;= R$ 30 milhões. Sem média: inconclusivo.</p><p style="margin:12px 0;font-size:13px">Perfil Finap - Lei do Bem: média dos anos fechados &gt; R$ 50 milhões E CNAE principal na lista explícita de 296 CNAEs da planilha cnae Finep (2).xlsx. Igualdade não qualifica. Sem CNAE: verificar. A lista CNAES_FINAP em services/analisar_job.py é a fonte editável e acompanha o executável, sem dependência da planilha em produção. Alterações exigem novo build do analisador empacotado.</p><p style="margin:12px 0;font-size:13px">Detalhes mostram dados extraídos; evidências mostram caminhos de origem, trechos e valores. Ausência de dado não significa negativa. A maioria dos campos usa o primeiro documento reconhecido; não há escolha automática pelo mais recente. OCR pode falhar e requer conferência.</p><p style="margin:12px 0;font-size:13px">Checklist: sem contrato e com Perfil Transação. Fastpass inconclusivo não gera reprovação de faturamento baixo.</p><p style="margin:12px 0;font-size:13px">Tags do relatório: azul = encontrado; laranja = não encontrado. Classificação separada: verde = é perfil; vermelho = não é perfil; laranja = inconclusivo. Perfil Family: todos os sócios identificados com CPF = é perfil; ao menos um sócio CNPJ = não é perfil. Sem sócios com CPF/CNPJ identificados = inconclusivo. A classificação comercial não infere parentesco.</p><p style="margin:12px 0;font-size:13px">Pastas comparadas por componentes inteiros, em ordem, ignorando acentos e caixa. Evita confundir 2 - Fiscal com 12 - Fiscal.</p><p style="margin:12px 0;font-size:13px">PDFs mistos: extração e OCR por página sem texto, preservando número da página. OCR usa arquivos temporários fora da origem, timeout e fallback de idioma. Falha de leitura não significa resposta negativa. Cache invalidado por tamanho e data de modificação.</p><p style="margin:12px 0;font-size:13px">Matriz: indicação explícita no conteúdo, datas válidas não futuras, CNAE principal sem confundir com secundários. Documentos de matriz divergentes tornam o resultado inconclusivo. Fonte alternativa é somente a seção cadastral explicitamente da matriz no relatório fiscal.</p><p style="margin:12px 0;font-size:13px">Sócios: leitura limitada à seção societária, encerrada antes de Certidão Emitida e Diagnóstico Fiscal. CPF/CNPJ do certificado, contribuinte e responsáveis fora da seção não são sócios. Cargo e situação cadastral não compõem o nome. Não infere parentesco.</p><p style="margin:12px 0;font-size:13px">Simples: períodos de opção separados de SIMEI, consulta/emissão e eventos futuros. Ausência explícita de períodos anteriores é evidência; ausência de informação não prova que nunca foi optante.</p><p style="margin:12px 0;font-size:13px">Perfil Previdenciário: XLSX lido por cabeçalhos ANO/MÉDIA/STATUS; nunca confundir SOMA VALOR ORIGINAL com MÉDIA. Relatorio_MEDIA de arrecadação não produz perfil nem faturamento. Vereditos divergentes por ano são inconclusivos; texto solto genérico não decide perfil.</p><p style="margin:12px 0;font-size:13px">PGFN: compara documentos de capacidade de pagamento; totais divergentes deixam Perfil Transação inconclusivo. Quando CNPJ matriz está identificado, documento com CPF/CNPJ de outro contribuinte é descartado. Não inclui contencioso nem soma tabelas fiscais.</p><p style="margin:12px 0;font-size:13px">Faturamento: XLSX exige coluna anual de receita/faturamento identificada; DARF, arrecadação, DCTF e médias de tributos são descartados. Não presume ano a partir de datas soltas de emissão nem de nome com anos ambíguos. Texto explicitamente mensal não vira total anual.</p><p style="margin:12px 0;font-size:13px">Testes sintéticos versionados não contêm os documentos privados enviados. Conferência adicional local com os arquivos reais verifica valores esperados e hashes SHA-256 inalterados das origens. OCR/novos layouts ainda podem exigir conferência humana; não há garantia de erro zero.</p><p style="margin:12px 0;font-size:13px">Exclusão antecipada: qualquer arquivo cujo nome contenha filial (sem diferenciar maiúsculas/minúsculas) é ignorado antes de abertura, extração de texto e OCR, em todos os perfis e nos dois modos.</p><p style="margin:12px 0;font-size:13px">Na pasta B - Documentos/1 - Contábil/5 - ECF, ignora arquivos com SPED no nome antes de abrir, independentemente de caixa. Não exige FATURAMENTO no nome: consolidado e outros nomes são candidatos. Preserva exclusão global de filial.</p><p style="margin:12px 0;font-size:13px">A menção a arquivos SPED dentro do texto de um consolidado é evidência, não motivo para descartar o consolidado. Não abre os arquivos citados.</p><p style="margin:12px 0;font-size:13px">Consolidados com vários blocos ANO: associam cada ano ao TOTAL DO ARQUIVO ou TOTAL DO ANO PIS/COFINS daquele bloco. Não usam TOTAL CONSOLIDADO, FAT MEDIO ou a média previamente calculada no arquivo.</p><p style="margin:12px 0;font-size:13px">Exibe todos os anos extraídos; calcula de novo a média aritmética dos anos anteriores ao ano corrente. Em 2026, mostra 2026 mas exclui esse ano da média. Mantém proteção contra valores divergentes para o mesmo ano fechado.</p><p style="margin:12px 0;font-size:13px">Encontrado para faturamento exige pelo menos um valor anual extraído no resultado; existência de arquivo sem valores nunca gera tag azul. Um total anual zero é um valor válido. Reanalisar jobs antigos para atualizar resultados salvos.</p></details>
     <!-- Stats -->
     <div class="stats-row" id="statsRow">
-      <div class="stat-cell">
+      <div class="stat-cell" data-filtro="todos" role="button" tabindex="0" title="Mostrar todos os jobs">
         <div class="stat-num" id="statTotal">—</div>
         <div class="stat-label">Jobs Analisados</div>
       </div>
-      <div class="stat-cell">
+      <div class="stat-cell" data-filtro="alertas" role="button" tabindex="0" title="Mostrar só os jobs com alertas">
         <div class="stat-num" id="statAlerts" style="color:var(--red)">—</div>
         <div class="stat-label">Com Alertas</div>
       </div>
-      <div class="stat-cell">
+      <div class="stat-cell" data-filtro="fastpass" role="button" tabindex="0" title="Mostrar só os jobs Perfil Fastpass">
         <div class="stat-num" id="statFastpass" style="color:var(--blue-mid)">—</div>
         <div class="stat-label">Perfil Fastpass > 200M</div>
+      </div>
+      <div class="stat-cell" data-filtro="prev" role="button" tabindex="0" title="Mostrar só os jobs Perfil Previdenciário">
+        <div class="stat-num" id="statPrev" style="color:var(--green)">—</div>
+        <div class="stat-label">Perfil Previdenciário</div>
       </div>
     </div>
 
@@ -729,6 +747,7 @@
       <div class="card-body" style="padding:12px 16px 8px">
         <div class="toolbar">
           <span class="toolbar-title" id="jobsCount">0 jobs</span>
+          <button type="button" class="filtro-chip" id="filtroChip" hidden title="Remover filtro"></button>
           <input type="search" id="searchInput" placeholder="Buscar job…"
             oninput="filtrarJobs(this.value)">
         </div>
@@ -779,6 +798,9 @@
   </div>
 </div>
 
+<a href="/logs.html" target="_blank" rel="noopener" title="Logs do servidor (Ctrl+Shift+L)"
+   style="position:fixed;right:10px;bottom:6px;font-size:10px;opacity:.3;color:var(--fg-3);text-decoration:none">logs</a>
+
 <script>
 // ── Config ──────────────────────────────────────────────────────────────────
 const API = '';  // mesmo origin — ''/api/jobs funciona porque servido pelo Express
@@ -806,7 +828,7 @@ async function carregarJobs() {
     const r = await fetch(`${API}/api/jobs`);
     const data = await r.json();
     todosJobs = data.jobs || [];
-    renderJobs(todosJobs);
+    aplicarFiltros();
     atualizarStats(todosJobs);
   } catch (e) {
     console.error('Erro ao carregar jobs:', e);
@@ -817,7 +839,7 @@ function esc(v) {
   return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function renderJobs(jobs) {
+function renderJobs(jobs, filtrando = false) {
   const tbody = document.getElementById('jobsBody');
   document.getElementById('jobsCount').textContent = `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`;
 
@@ -826,7 +848,7 @@ function renderJobs(jobs) {
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
       </svg>
-      <p>Nenhum job analisado ainda.</p></div></td></tr>`;
+      <p>${filtrando ? 'Nenhum job encontrado neste filtro.' : 'Nenhum job analisado ainda.'}</p></div></td></tr>`;
     return;
   }
 
@@ -881,23 +903,61 @@ function renderJobs(jobs) {
   }).join('');
 }
 
+// Filtros dos cards de estatística. O mesmo teste conta (card) e filtra (tabela),
+// então o número do card sempre bate com a lista exibida. Para criar outro
+// filtro, adicione aqui + um .stat-cell[data-filtro="..."] no HTML.
+const FILTROS = {
+  todos:    { rotulo: 'Todos',                teste: () => true },
+  alertas:  { rotulo: 'Com alertas',          teste: j => !!(j.alerta_sem_contrato || j.alerta_sem_procuracao || j.alerta_baixo_fat || j.alerta_regularize) },
+  fastpass: { rotulo: 'Perfil Fastpass',      teste: j => (j.fastpass || '').toLowerCase().startsWith('sim') },
+  prev:     { rotulo: 'Perfil Previdenciário', teste: j => (j.perfil || '').toLowerCase().startsWith('é perfil') },
+};
+let filtroAtivo = 'todos';
+
 function atualizarStats(jobs) {
   document.getElementById('statTotal').textContent = jobs.length;
-  const comAlerta = jobs.filter(j => j.alerta_sem_contrato || j.alerta_sem_procuracao || j.alerta_baixo_fat || j.alerta_regularize).length;
-  const fastpass  = jobs.filter(j => (j.fastpass || '').toLowerCase().startsWith('sim')).length;
-  document.getElementById('statAlerts').textContent = comAlerta;
-  document.getElementById('statFastpass').textContent = fastpass;
+  document.getElementById('statAlerts').textContent = jobs.filter(FILTROS.alertas.teste).length;
+  document.getElementById('statFastpass').textContent = jobs.filter(FILTROS.fastpass.teste).length;
+  document.getElementById('statPrev').textContent = jobs.filter(FILTROS.prev.teste).length;
 }
 
-function filtrarJobs(q) {
-  if (!q.trim()) { renderJobs(todosJobs); return; }
+// Aplica o filtro do card + o texto da busca (os dois se combinam).
+function aplicarFiltros() {
+  // Busca por texto: mesma regra de sempre (vazio = tudo; senão compara o texto
+  // digitado, em minúsculas, com num_job, pasta_raiz e regularize).
+  const q = document.getElementById('searchInput').value || '';
+  const buscando = !!q.trim();
   const t = q.toLowerCase();
-  renderJobs(todosJobs.filter(j =>
-    j.num_job.toLowerCase().includes(t) ||
-    (j.pasta_raiz || '').toLowerCase().includes(t) ||
-    (j.regularize || '').toLowerCase().includes(t)
-  ));
+  const lista = todosJobs.filter(j =>
+    FILTROS[filtroAtivo].teste(j) &&
+    (!buscando ||
+      j.num_job.toLowerCase().includes(t) ||
+      (j.pasta_raiz || '').toLowerCase().includes(t) ||
+      (j.regularize || '').toLowerCase().includes(t))
+  );
+  renderJobs(lista, filtroAtivo !== 'todos' || buscando);
+
+  document.querySelectorAll('.stat-cell[data-filtro]').forEach(c =>
+    c.classList.toggle('ativo', c.dataset.filtro === filtroAtivo));
+  const chip = document.getElementById('filtroChip');
+  chip.hidden = filtroAtivo === 'todos';
+  chip.textContent = `${FILTROS[filtroAtivo].rotulo} ✕`;
 }
+
+function filtrarJobs() { aplicarFiltros(); }
+
+function escolherFiltro(nome) {
+  // Clicar de novo no card ativo (ou em "Jobs Analisados") volta a mostrar tudo.
+  filtroAtivo = (nome === filtroAtivo) ? 'todos' : nome;
+  aplicarFiltros();
+}
+document.querySelectorAll('.stat-cell[data-filtro]').forEach(c => {
+  c.addEventListener('click', () => escolherFiltro(c.dataset.filtro));
+  c.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); escolherFiltro(c.dataset.filtro); }
+  });
+});
+document.getElementById('filtroChip').addEventListener('click', () => escolherFiltro('todos'));
 
 // ── Formulário de análise ───────────────────────────────────────────────────
 const selectedFolders = new Set();
@@ -1150,6 +1210,11 @@ function fecharModal(e) {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') fecharModal();
+  // Tela de logs escondida (no app Desktop o Electron já intercepta este atalho)
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'l') {
+    e.preventDefault();
+    window.open('/logs.html', '_blank', 'noopener');
+  }
 });
 
 // ── Init ────────────────────────────────────────────────────────────────────

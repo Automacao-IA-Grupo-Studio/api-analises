@@ -74,6 +74,8 @@ function createController({ baseDir, pyScriptPath }) {
       return res.status(400).json({ error: 'Campos obrigatórios: pasta_raiz, num_job' });
     }
 
+    const inicio = Date.now();
+    const duracao = () => logger.formatarDuracao(Date.now() - inicio);
     logger.info(`[analisar] Iniciando: job="${num_job}" pasta="${pasta_raiz}"`);
 
     const python = spawn(PYTHON_BIN, [...SCRIPT_ARGS_PREFIX, pasta_raiz], {
@@ -98,7 +100,7 @@ function createController({ baseDir, pyScriptPath }) {
     python.stdout.on('data', chunk => { stdout += chunk; });
     python.stderr.on('data', chunk => {
       stderr += chunk;
-      chunk.split(/\r?\n/).filter(l => l.trim()).forEach(l => logger.info(`[analisador] ${l}`));
+      chunk.split(/\r?\n/).filter(l => l.trim()).forEach(l => logger.info(`[analisador ${num_job}] ${l}`));
     });
 
     python.on('error', err => {
@@ -110,7 +112,7 @@ function createController({ baseDir, pyScriptPath }) {
     });
 
     python.on('close', code => {
-      logger.info(`[analisar] Analisador terminou: exit=${code} | stdout=${stdout.length} chars | stderr=${stderr.length} chars`);
+      logger.info(`[analisar] Analisador terminou: job="${num_job}" exit=${code} | duração=${duracao()} | stdout=${stdout.length} chars | stderr=${stderr.length} chars`);
       if (respondido) return;
       let analise;
       try {
@@ -183,7 +185,7 @@ function createController({ baseDir, pyScriptPath }) {
           raw_resultado: analise, // objeto, não string — o frontend espera isso
         });
 
-        logger.info(`[analisar] Concluído e salvo: job="${num_job}" id=${job.id} ` +
+        logger.info(`[analisar] Concluído e salvo: job="${num_job}" id=${job.id} | duração=${duracao()} ` +
                     `(${analise.resumo?.encontrados ?? '?'}/${analise.resumo?.total ?? '?'} itens encontrados)`);
         responder(201, { mensagem: 'Análise concluída e salva com sucesso', job });
       } catch (dbErr) {
